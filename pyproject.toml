@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pdpolygonapi"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
-  { name="Danie Goldfarb", email="dgoldfarb.github@gmail.com" },
+  { name="Daniel Goldfarb", email="dgoldfarb.github@gmail.com" },
 ]
 description = "A python API for the polygon.io REST API that returns Pandas objects" 
 readme = "README.md"
