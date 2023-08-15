@@ -3,7 +3,7 @@
 Python API for Polygon.io returning Pandas Objects.
 
 This package provides a class, **`PolygonApi`** that provides methods for accessing 
-polygon.io's REST API and returning data in various Pandas objects (e: DataFrame and/or Series).
+polygon.io's REST API and returning data in various Pandas objects (for example, DataFrames and/or Series).
 
 This package is in no way endorsed by, nor associated with, polygon.io or its ownership.
 
@@ -14,7 +14,7 @@ Some of the methods include:
                                The DataFrame is Indexed by Expiration Date, Strike, and Put/Call
    - `fetch_quotes()`        ... Returns Bid/Ask BidSize/AskSize data for a Ticker, with a Datetime Index
 
-For more detailed information on the above, see the ApiPolygon jupyter notebook in the examples folder.
+### [For more detailed information see the apiPolygon jupyter notebook in the examples folder](https://github.com/DanielGoldfarb/pdpolygonapi/blob/main/examples/apiPolygon.ipynb).
 
 ---
 
@@ -22,11 +22,12 @@ For more detailed information on the above, see the ApiPolygon jupyter notebook 
 ```
 NOTE: It is strongly recommended that you store your Polygon.io APIKEY in an ENVIRONMENT VARIABLE on
       your local machine, and pass the NAME of the ENVIRONMENT VARIABLE into the class constructor.
-      (See `examples/apiPolygon.ipynb`)
 
       (Alternatively you can pass your APIKEY directly into the class constructor, but for security
        reasons this is not recommended.  At any rate, AVOID putting your APIKEY into your code).
 ```
+## See [**`examples/apiPolygon.ipynb`**](https://github.com/DanielGoldfarb/pdpolygonapi/blob/main/examples/apiPolygon.ipynb)
+
 
 ---
 
