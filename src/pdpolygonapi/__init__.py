@@ -1,2 +1,1 @@
-from pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
 from pdpolygonapi.pdpolygonapi import PolygonApi

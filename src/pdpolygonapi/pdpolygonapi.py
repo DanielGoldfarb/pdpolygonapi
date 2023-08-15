@@ -47,8 +47,8 @@ class PolygonApi(_PolygonApiBase):
         else:
             self.APIKEY=os.environ.get('POLYGON_API')
     
-    def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',
-                      market='regular',span_multiplier=1,tz='US/Eastern'):
+    def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',
+                      span_multiplier=1,tz='US/Eastern',show_request=False):
         """
         Given an ticker, fetch and return the OHLCV data (Open, High, Low, Close,
         and Volume) for that ticker as a Pandas DataFrame with a DatetimeIndex.
@@ -123,7 +123,10 @@ class PolygonApi(_PolygonApiBase):
              '/range/1/'+span+
              '/'+start_dtm+'/'+end_dtm+'?'+
              'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
-        print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+        if show_request:
+            print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+        else:
+            print('requesting data ...')
 
         rjson = self._req_get_json(req)
         
@@ -203,19 +206,19 @@ class PolygonApi(_PolygonApiBase):
         """
         Options Chain class
         """
-        def __init__(self,underlying,tickersdf):
+        def __init__(self,underlying,tickers):
             self._underlying  = underlying
-            self._tickersdf   = tickersdf
-            expvalues = self._tickersdf.index.get_level_values(0).unique().sort_values().values
+            self._tickers     = tickers
+            expvalues = self._tickers.index.get_level_values(0).unique().sort_values().values
             expindex  = pd.DatetimeIndex(expvalues)
-            self._expirations = pd.DataFrame(expvalues,index=expindex,columns=['Expiration'])
+            self._expirations = pd.Series(expvalues,index=expindex,name='Expiration')
             self._strikes = {}
             for xp in expvalues:
-                self._strikes[xp] = self._tickersdf.loc[xp].index.get_level_values(0).unique().to_frame()
+                self._strikes[xp] = self._tickers.loc[xp].index.get_level_values(0).unique().to_series()
 
         @property
         def tickers(self):
-            return self._tickersdf
+            return self._tickers
 
         @property
         def underlying(self):
@@ -235,7 +238,7 @@ class PolygonApi(_PolygonApiBase):
             return None
     
 
-    def fetch_options_chain(self,underlying,start_expiration=None,end_expiration=None):
+    def fetch_options_chain(self,underlying,start_expiration=None,end_expiration=None,show_request=False):
         """
         Given an underlying ticker, fetch all of the options for that underlying
         that have expiration dates between (and including) `start_expiration` and
@@ -259,7 +262,7 @@ class PolygonApi(_PolygonApiBase):
 
         Returns
         -------
-        an `OptionChain`  object that contains:
+        an `OptionsChain` object that contains:
             underlying:   Ticker symbol of the underlying security
             tickers:      Dataframe of option tickers keyed by expiration date and strike price
             expirations:  List of all expiration dates in this options chain.
@@ -301,9 +304,14 @@ class PolygonApi(_PolygonApiBase):
         totdf = None
         for expired in expval:
             req = _gen_contracts_request(underlying,expired,start_dtm,end_dtm)
-            print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
-            r = requests.get(req)
-            rd = r.json()
+            if show_request:
+                print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+            else:
+                print('Requesting data ...',end='')
+            rd = self._req_get_json(req)
+            if 'results' not in rd:
+               totdf = pd.DataFrame(columns=['contract_type','expiration_date','strike_price','ticker'])
+               break
             rdf = pd.DataFrame(rd['results'])
             rdf.drop(['cfi','exercise_style','primary_exchange','shares_per_contract','underlying_ticker'],axis=1,inplace=True)
             if totdf is None: totdf = pd.DataFrame(columns=rdf.columns)
@@ -328,10 +336,10 @@ class PolygonApi(_PolygonApiBase):
         totdf.sort_index(inplace=True)
         
         #oc = OptionsChain(underlying,totdf)
-        return self.OptionsChain(underlying,totdf)
+        return self.OptionsChain(underlying,totdf.Ticker)
     
 
-    def fetch_quotes(self,ticker,str_date):
+    def fetch_quotes(self,ticker,str_date,show_request=False):
         
         # Format nanosecond UTC unix timestamps:
         ts1 = str(int(pd.Timestamp(str_date+' 09:30',tz='US/Eastern').tz_convert('UTC').timestamp()*(10**9)))
@@ -343,7 +351,9 @@ class PolygonApi(_PolygonApiBase):
 
         print('Requesting quote data for "'+ticker+'"\n',
               'from',pd.Timestamp(int(ts1)),' to ',pd.Timestamp(int(ts2)),'UTC')
-        print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+
+        if show_request:
+            print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
     
         rd  = requests.get(req).json()
         

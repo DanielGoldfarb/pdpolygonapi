@@ -39,13 +39,15 @@ class _PolygonApiBase:
     
     def _req_get_json(self,req):
         r = requests.get(req)
-        return r.json()
+        rjson = r.json()
+        if 'results' not in rjson:
+            message = rjson['message'] if 'message' in rjson else 'No results returned!'
+            warnings.warn('\n'+message)
+        return rjson
         
     def _json_response_to_ohlcvdf(self,span,rjson,tz='US/Eastern'):
         #print('rjson.keys()=',rjson.keys())
         if 'results' not in rjson:
-            message = rjson['message'] if 'message' in rjson else 'No results returned!'
-            warnings.warn('\n'+message)
             return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
         
 #         for key in ['ticker', 'queryCount', 'resultsCount', 'adjusted', 'status', 'request_id', 'count']:
