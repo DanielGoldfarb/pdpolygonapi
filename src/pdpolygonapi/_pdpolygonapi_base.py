@@ -34,7 +34,7 @@ class _PolygonApiBase:
 
     def _input_to_mstimestamp(self,input,adj=None):
         dtm = self._input_to_datetime(input,adj)
-        print('dtm=',dtm)
+        #print('dtm=',dtm)
         return str(int(dtm.timestamp() * 1000))
     
     def _req_get_json(self,req):
@@ -67,10 +67,11 @@ class _PolygonApiBase:
             tempdf.index = pd.DatetimeIndex([t.date() for t in tempdf.index])
         else: # span is hour, minute or second:
             tempdf.index = tempdf.index.tz_convert(tz=tz).tz_localize(tz=None)
-        
+
         tempdf.rename(columns=self._OHLCV_COLMAP,inplace=True)
         tempdf.index.name = rjson['ticker']
-        return tempdf[ self._OHLCV_COLMAP.values() ]
+        retdf = tempdf[ self._OHLCV_COLMAP.values() ]
+        return retdf
 
 
 ##########################################################################################

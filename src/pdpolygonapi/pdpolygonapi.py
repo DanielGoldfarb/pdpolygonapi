@@ -125,8 +125,6 @@ class PolygonApi(_PolygonApiBase):
              'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
         if show_request:
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
-        else:
-            print('requesting data ...')
 
         rjson = self._req_get_json(req)
         
@@ -175,6 +173,7 @@ class PolygonApi(_PolygonApiBase):
             dlist  = np.unique(tempdf.index.date)
             #print('dlist=',dlist)
             mktdf  = pd.DataFrame(columns=tempdf.columns)
+            mktdf.index.name = tempdf.index.name
             for d in dlist:
                 t1 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=9,minutes=30)
                 t1 = t1.tz_convert(tz).tz_localize(tz=None)
@@ -359,12 +358,22 @@ class PolygonApi(_PolygonApiBase):
         
         print('response status:',rd['status'])#,'  response keys:',rd.keys())
         
+        columns = ['Ask','AsizeA','AsizeM','AsizeH','AsizeL',
+                  'Bid','BsizeA','BsizeM','BsizeH','BsizeL','Count']
+        ix = pd.DatetimeIndex([],name='Timestamp')
+        empty = pd.DataFrame(columns=columns,index=ix)
+
         if rd['status'] != 'OK':
-            return None
+            print('Got status =',rd['status'])
+            return empty
         
         if 'results' not in rd:
-            print('No results')
-            return None
+            print('No results in response.')
+            return empty
+
+        if len(rd['results']) == 0:
+            print('zero length results.')
+            return empty
     
         qdf = pd.DataFrame(rd['results'])
         ts = [pd.Timestamp(t,tz='UTC') for t in qdf.sip_timestamp]
