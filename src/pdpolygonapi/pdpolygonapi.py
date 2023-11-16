@@ -48,7 +48,7 @@ class PolygonApi(_PolygonApiBase):
             self.APIKEY=os.environ.get('POLYGON_API')
     
     def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',
-                      span_multiplier=1,tz='US/Eastern',show_request=False):
+                      span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
         """
         Given an ticker, fetch and return the OHLCV data (Open, High, Low, Close,
         and Volume) for that ticker as a Pandas DataFrame with a DatetimeIndex.
@@ -83,10 +83,18 @@ class PolygonApi(_PolygonApiBase):
                        'regular' provide data only from 9:30 till 16:00.
                        'all'     include also data from extended-hours trading.
                        
-        span_multiplier (int):  Presently ignored.  When implemented, will resample data
-                        to the specified multiple of span.  For example, if `span` is minute
-                        and the multiplier is 5, then there will be one set of OHLCV data
-                        every 5 minutes.
+        span_multiplier (int): SEE ALSO `resample`.  If span_multiplier > 1 then
+                        the time between adjacent data points is (span * span_multipler).
+                        If `resample`, then span_multipler is implemented by resampling
+                        the data frame after fetching data from Polygon.io
+                        If `not resample`, then span_multiplier is passed to Polygon.io
+                        NOTE: when span_multiplier is passed to Polygon.io then 
+                              it is possible to have some time periods missing data,
+                              whereas when span multiplication is done via resampling
+                              then empty time periods will be *back* filled.
+
+        resample (bool): If True, then use resampling to implement span_multiplier.
+                         If False, pass span_multiplier to polygon REST API.
                         
         tz (str)     :  Time Zone for data returned.  Default is 'US/Eastern'    
                        
@@ -106,21 +114,20 @@ class PolygonApi(_PolygonApiBase):
         if span not in valid_spans:
             raise ValueError('span must be one of '+str(valid_spans))
             
-        if span_multiplier != 1:
+        if not isinstance(span_multiplier,int):
             warnings.warn('\n=========\n'+
-                          'This version: span_multiplier != 1 ignored.\n'+
-                          'Use DataFrame resampling instead.\n'+
+                          'span_multiplier ('+str(span_multiplier)+') must be integer.\n'+
+                          'Resetting span_multipler to 1\n'+
                           '===========\n')
             span_multiplier = 1
-            
+
         end_dtm   = self._input_to_mstimestamp(end,'end')
         start_dtm = self._input_to_mstimestamp(start,0)
                 
-        # The request always uses span_multiplier of 1.
-        # If caller specifies span_multiplier then we use
-        # Pandas resample to adjust the span.
+        s_spanmult = '1' if resample else str(span_multiplier)
+        
         req=('https://api.polygon.io/v2/aggs/ticker/'+ticker+
-             '/range/1/'+span+
+             '/range/'+s_spanmult+'/'+span+
              '/'+start_dtm+'/'+end_dtm+'?'+
              'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
         if show_request:
@@ -184,20 +191,21 @@ class PolygonApi(_PolygonApiBase):
                 #print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
             tempdf = mktdf
         
-#         if span_multiplier > 1:
-#             smult = str(span_multiplier)
-#             sdict = dict(second='S',minute='T',hour='H',day='D',
-#                          week='W',month='M',quarter='Q',year='A')
-#             freq  = smult+sdict[span]
-#             if span == 'day' and span_multiplier=7:
-#                freq = '1W'
-#             ntdf = tempdf.resample('1W').agg(
-#                  {'Open'  :'first',
-#                   'High'  :'max',
-#                   'Low'   :'min',
-#                   'Close' :'last',
-#                   'Volume':'sum'
-#                  })
+        if span_multiplier > 1 and resample:
+            smult = str(span_multiplier)
+            sdict = dict(second='S',minute='T',hour='H',day='D',
+                         week='W',month='M',quarter='Q',year='A')
+            freq  = smult+sdict[span]
+            if span == 'day' and span_multiplier==7:
+               freq = '1W'
+            ntdf = tempdf.resample(freq).agg(
+                 {'Open'  :'first',
+                  'High'  :'max',
+                  'Low'   :'min',
+                  'Close' :'last',
+                  'Volume':'sum'
+                 })
+            tempdf = ntdf.bfill()
             
         return tempdf
     
