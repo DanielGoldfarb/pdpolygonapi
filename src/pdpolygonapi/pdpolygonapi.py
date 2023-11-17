@@ -8,6 +8,7 @@
 import pandas as pd
 import requests
 import os
+import pathlib
 import datetime
 import numpy as np
 import warnings
@@ -47,7 +48,7 @@ class PolygonApi(_PolygonApiBase):
         else:
             self.APIKEY=os.environ.get('POLYGON_API')
     
-    def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',
+    def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
                       span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
         """
         Given an ticker, fetch and return the OHLCV data (Open, High, Low, Close,
@@ -82,6 +83,19 @@ class PolygonApi(_PolygonApiBase):
         market (str) : 'regular' or 'all' (Default is 'regular')
                        'regular' provide data only from 9:30 till 16:00.
                        'all'     include also data from extended-hours trading.
+
+        cache (bool) : Create and/or use cache files.  Cache files are under
+                       `Path.home()/.pdpolygonapi/ohlcv_cache/` by ticker symbol.
+                         If ticker is an option, then cache will be from 90 days before
+                       expiration until expiration (or until today, whichever is earlier).
+                       If both today and expiration are later than the latest date
+                       in the file, then the cache is considered invalid.
+                         If ticker is not an option, the cache will be from 90 days 
+                       before today until today.  If today is later than the lastest date
+                       time in the file, then the cache will be considered invalid.
+                         An invalid cache is regenerated when data is requested.
+                       Cached ohlcv data is always minutely, therefore requests for 
+                       data less than minutely will _not_ use the cache.
                        
         span_multiplier (int): SEE ALSO `resample`.  If span_multiplier > 1 then
                         the time between adjacent data points is (span * span_multipler).
@@ -113,6 +127,12 @@ class PolygonApi(_PolygonApiBase):
                         'week','month','quarter','year')
         if span not in valid_spans:
             raise ValueError('span must be one of '+str(valid_spans))
+
+        if span == 'second' and cache:
+            cache = False
+            warnings.warn('\n=========\n'+
+                          'cache will not be used for less than minutely data.\n'+
+                          '===========\n')
             
         if not isinstance(span_multiplier,int):
             warnings.warn('\n=========\n'+
@@ -125,72 +145,103 @@ class PolygonApi(_PolygonApiBase):
         start_dtm = self._input_to_mstimestamp(start,0)
                 
         s_spanmult = '1' if resample else str(span_multiplier)
-        
-        req=('https://api.polygon.io/v2/aggs/ticker/'+ticker+
-             '/range/'+s_spanmult+'/'+span+
-             '/'+start_dtm+'/'+end_dtm+'?'+
-             'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
+
+        req = ('https://api.polygon.io/v2/aggs/ticker/'+ticker+
+               '/range/'+s_spanmult+'/'+span+
+               '/'+start_dtm+'/'+end_dtm+'?'+
+               'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
+
         if show_request:
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
-        rjson = self._req_get_json(req)
+        def request_data():
+            nonlocal req
+            #print('reqz=',reqz)
+            #print('req=',req)
+            rjson = self._req_get_json(req)
         
-        tempdf = self._json_response_to_ohlcvdf(span,rjson,tz=tz)
-        if len(tempdf) == 0:
+            tempdf = self._json_response_to_ohlcvdf(span,rjson,tz=tz)
+            if len(tempdf) == 0:
+                return tempdf
+
+            #print('len(tempdf)=',len(tempdf))
+            if 'next_url' in rjson: 
+                while 'next_url' in rjson:
+                    print('\n==> GETTING NEXT URL:',rjson['next_url'])
+                    req=rjson['next_url']+'&apikey='+self.APIKEY
+                    rjson = self._req_get_json(req)
+                    tempdf = pd.concat([tempdf,self._json_response_to_ohlcvdf(span,rjson)])
+                    #print('len(build)=',len(build))
+
+            #print('len(tempdf)=',len(tempdf))
+            #print(tempdf.head(2))
+            #print(tempdf.tail(2))
+            # =======================================================
+            # From: 
+            # https://support.tastyworks.com/support/solutions/articles/43000435335-options-that-trade-until-3-15-pm-central-
+            #
+            # When do equity and ETF options stop trading?
+            #
+            # MOST STOP TRADING AT THE MARKET CLOSE, HOWEVER SOME TRADE 15-MIN. AFTER THE CLOSE
+            # Options on most underlyings close when the market closes at 3:00 pm Central Time (Chicago Time). 
+            # However, there is a handful of ETF options that trade until 3:15 pm Central Time 
+            # or 15-minutes after the equity markets close (3:00 pm Central).
+            #
+            # OPTIONS THAT TRADE UNTIL 3:15 PM CENTRAL TIME (CHICAGO TIME)
+            # AUM, AUX, BACD, BPX, BRB, BSZ, BVZ, CDD, CITD, DBA, DBB, DBC, DBO, DBS, DIA, DJX, EEM, EFA, EUI, EUU, 
+            # GAZ, GBP, GSSD, IWM, IWN, IWO, IWV, JJC, JPMD, KBE, KRE, MDY, MLPN, MNX, MOO, MRUT, MSTD, NDO, NDX, NZD,
+            # OEF, OEX, OIL, PZO, QQQ, RUT, RVX, SFC, SKA, SLX, SPX, SPX (PM Expiration), SPY, SVXY, UNG, UUP, UVIX, 
+            # UVXY, VIIX, VIX, VIXM, VIXY, VXEEM, VXST, VXX, VXZ, XEO, XHB, XLB, XLE, XLF, XLI, XLK, XLP, XLU, XLV, 
+            # XLY, XME, XRT, XSP, XSP (AM Expiration), & YUK
+            #
+            # EXCEPTION FOR CASH-SETTLED INDICES
+            # All PM-settled day of expiration options for NDX, RUT, SPX, OEX and XEO stop trading at 3:00 pm. 
+            # -------------------------------------------------------
+            # Despite the above information, for now we will continue
+            # to return 9:30 - 16:00 for "regular" trading hours.
+            # =======================================================
+            
+            if span in ('hour','minute','second') and market == 'regular':
+                dlist  = np.unique(tempdf.index.date)
+                #print('dlist=',dlist)
+                mktdf  = pd.DataFrame(columns=tempdf.columns)
+                mktdf.index.name = tempdf.index.name
+                for d in dlist:
+                    t1 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=9,minutes=30)
+                    t1 = t1.tz_convert(tz).tz_localize(tz=None)
+                    t2 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=16)
+                    t2 = t2.tz_convert(tz).tz_localize(tz=None)
+                    #print(t1,t2,'\n',tempdf.loc[t1:t2].head(),'\n')
+                    mktdf = pd.concat([mktdf,tempdf.loc[t1:t2]])
+                    #print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
+                tempdf = mktdf
+
             return tempdf
-
-        #print('len(tempdf)=',len(tempdf))
-        if 'next_url' in rjson: 
-            while 'next_url' in rjson:
-                print('\n==> GETTING NEXT URL:',rjson['next_url'])
-                req=rjson['next_url']+'&apikey='+self.APIKEY
-                rjson = self._req_get_json(req)
-                tempdf = pd.concat([tempdf,self._json_response_to_ohlcvdf(span,rjson)])
-                #print('len(build)=',len(build))
-
-        #print('len(tempdf)=',len(tempdf))
-        #print(tempdf.head(2))
-        #print(tempdf.tail(2))
-        # =======================================================
-        # From: 
-        # https://support.tastyworks.com/support/solutions/articles/43000435335-options-that-trade-until-3-15-pm-central-
-        #
-        # When do equity and ETF options stop trading?
-        #
-        # MOST STOP TRADING AT THE MARKET CLOSE, HOWEVER SOME TRADE 15-MIN. AFTER THE CLOSE
-        # Options on most underlyings close when the market closes at 3:00 pm Central Time (Chicago Time). 
-        # However, there is a handful of ETF options that trade until 3:15 pm Central Time 
-        # or 15-minutes after the equity markets close (3:00 pm Central).
-        #
-        # OPTIONS THAT TRADE UNTIL 3:15 PM CENTRAL TIME (CHICAGO TIME)
-        # AUM, AUX, BACD, BPX, BRB, BSZ, BVZ, CDD, CITD, DBA, DBB, DBC, DBO, DBS, DIA, DJX, EEM, EFA, EUI, EUU, 
-        # GAZ, GBP, GSSD, IWM, IWN, IWO, IWV, JJC, JPMD, KBE, KRE, MDY, MLPN, MNX, MOO, MRUT, MSTD, NDO, NDX, NZD,
-        # OEF, OEX, OIL, PZO, QQQ, RUT, RVX, SFC, SKA, SLX, SPX, SPX (PM Expiration), SPY, SVXY, UNG, UUP, UVIX, 
-        # UVXY, VIIX, VIX, VIXM, VIXY, VXEEM, VXST, VXX, VXZ, XEO, XHB, XLB, XLE, XLF, XLI, XLK, XLP, XLU, XLV, 
-        # XLY, XME, XRT, XSP, XSP (AM Expiration), & YUK
-        #
-        # EXCEPTION FOR CASH-SETTLED INDICES
-        # All PM-settled day of expiration options for NDX, RUT, SPX, OEX and XEO stop trading at 3:00 pm. 
-        # -------------------------------------------------------
-        # Despite the above information, for now we will continue
-        # to return 9:30 - 16:00 for "regular" trading hours.
-        # =======================================================
+            
+        if cache:
+            cache_dir = (pathlib.Path.home() / '.pdpolygonapi/ohlcv_cache')
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = (cache_dir / (ticker+'.csv.gz'))
+            try:
+               size = pathlib.Path(cache_file).stat().st_size
+               if size > 0:
+                   print('using cache file',cache_file,'size=',size)
+                   tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
+            except:
+               if ticker[0:1] == 'O:': # we have an option
+                   # set end to expiration date:
+                   pass
+               # self.fetch_ohlcvdf(ticker,
+               # fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
+               #               span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
+               print('cache not found, requesting data.')
+               tempdf = request_data()
+               print('caching data ...')
+               tempdf.to_csv(cache_file)
+        else:
+            tempdf = request_data()
         
-        if span in ('hour','minute','second') and market == 'regular':
-            dlist  = np.unique(tempdf.index.date)
-            #print('dlist=',dlist)
-            mktdf  = pd.DataFrame(columns=tempdf.columns)
-            mktdf.index.name = tempdf.index.name
-            for d in dlist:
-                t1 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=9,minutes=30)
-                t1 = t1.tz_convert(tz).tz_localize(tz=None)
-                t2 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=16)
-                t2 = t2.tz_convert(tz).tz_localize(tz=None)
-                #print(t1,t2,'\n',tempdf.loc[t1:t2].head(),'\n')
-                mktdf = pd.concat([mktdf,tempdf.loc[t1:t2]])
-                #print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
-            tempdf = mktdf
-        
+
         if span_multiplier > 1 and resample:
             smult = str(span_multiplier)
             sdict = dict(second='S',minute='T',hour='H',day='D',
