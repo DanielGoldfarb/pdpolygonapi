@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 import os
 import pathlib
+import re
 import datetime
 import numpy as np
 import warnings
@@ -47,6 +48,25 @@ class PolygonApi(_PolygonApiBase):
             self.APIKEY=os.environ.get(envkey)
         else:
             self.APIKEY=os.environ.get('POLYGON_API')
+
+    def _cache_dir(self):
+        cache_dir = (pathlib.Path.home() / '.pdpolygonapi/ohlcv_cache')
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    def _cache_file(self,ticker):
+        return (self._cache_dir() / (ticker+'.csv.gz'))
+
+    def clear_ohlcv_cache(self,ticker):
+        if ticker == 'all':
+            p = self._cache_dir()
+            for child in p.iterdir():
+                print('==> rm',child)
+                child.unlink()
+        else:
+            p = self._cache_file(ticker)
+            print('--> rm',p)
+            p.unlink(missing_ok=True)
     
     def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
                       span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
@@ -155,9 +175,6 @@ class PolygonApi(_PolygonApiBase):
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
         def request_data():
-            nonlocal req
-            #print('reqz=',reqz)
-            #print('req=',req)
             rjson = self._req_get_json(req)
         
             tempdf = self._json_response_to_ohlcvdf(span,rjson,tz=tz)
@@ -168,8 +185,8 @@ class PolygonApi(_PolygonApiBase):
             if 'next_url' in rjson: 
                 while 'next_url' in rjson:
                     print('\n==> GETTING NEXT URL:',rjson['next_url'])
-                    req=rjson['next_url']+'&apikey='+self.APIKEY
-                    rjson = self._req_get_json(req)
+                    nxtr=rjson['next_url']+'&apikey='+self.APIKEY
+                    rjson = self._req_get_json(nxtr)
                     tempdf = pd.concat([tempdf,self._json_response_to_ohlcvdf(span,rjson)])
                     #print('len(build)=',len(build))
 
@@ -217,11 +234,26 @@ class PolygonApi(_PolygonApiBase):
                 tempdf = mktdf
 
             return tempdf
+
+        def request_data_to_cache():
+            # Determine cache_start and cache_end
+            today = self._input_to_datetime(0,'end')
+            if ticker[0:2] == 'O:': # get option expiration:
+                ix = re.search('\d',ticker).start()
+                expir = '20'+ticker[ix:ix+2]+'-'+ticker[ix+2:ix+4]+'-'+ticker[ix+4:ix+6]
+                expir = self._input_to_datetime(expir,'end')
+                cache_end = min(today,expir)
+            else:
+                cache_end = today
+            cache_start = cache_end - datetime.timedelta(days=91)
+            cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
+            print('cache_start=',cache_start,'cache_end=',cache_end)
+            tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span='minute',
+                                        span_multiplier=1,show_request=True)
+            return tempdf
             
         if cache:
-            cache_dir = (pathlib.Path.home() / '.pdpolygonapi/ohlcv_cache')
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file = (cache_dir / (ticker+'.csv.gz'))
+            cache_file = self._cache_file(ticker)
             try:
                size = pathlib.Path(cache_file).stat().st_size
                if size > 0:
