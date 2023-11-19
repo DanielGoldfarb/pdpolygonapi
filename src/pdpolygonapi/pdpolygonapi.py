@@ -260,15 +260,9 @@ class PolygonApi(_PolygonApiBase):
                    print('using cache file',cache_file,'size=',size)
                    tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
             except:
-               if ticker[0:1] == 'O:': # we have an option
-                   # set end to expiration date:
-                   pass
-               # self.fetch_ohlcvdf(ticker,
-               # fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
-               #               span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
                print('cache not found, requesting data.')
-               tempdf = request_data()
-               print('caching data ...')
+               tempdf = request_data_to_cache()
+               print('caching data to file','"'+str(cache_file)+'"')
                tempdf.to_csv(cache_file)
         else:
             tempdf = request_data()
