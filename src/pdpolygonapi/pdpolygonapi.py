@@ -161,14 +161,14 @@ class PolygonApi(_PolygonApiBase):
                           '===========\n')
             span_multiplier = 1
 
-        end_dtm   = self._input_to_mstimestamp(end,'end')
-        start_dtm = self._input_to_mstimestamp(start,0)
+        end_msts   = self._input_to_mstimestamp(end,'end')
+        start_msts = self._input_to_mstimestamp(start,0)
                 
         s_spanmult = '1' if resample else str(span_multiplier)
 
         req = ('https://api.polygon.io/v2/aggs/ticker/'+ticker+
                '/range/'+s_spanmult+'/'+span+
-               '/'+start_dtm+'/'+end_dtm+'?'+
+               '/'+start_msts+'/'+end_msts+'?'+
                'adjusted=true&sort=asc&limit=50000&apiKey='+self.APIKEY)
 
         if show_request:
@@ -264,11 +264,17 @@ class PolygonApi(_PolygonApiBase):
                tempdf = request_data_to_cache()
                print('caching data to file','"'+str(cache_file)+'"')
                tempdf.to_csv(cache_file)
+            end_dtm   = self._input_to_datetime(end,'end')
+            start_dtm = self._input_to_datetime(start,0)
+            tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
         
+        must_resample = ((span_multiplier > 1 and resample) or
+                         (cache and (span != 'minute' or span_multiplier > 1))
+                        )
 
-        if span_multiplier > 1 and resample:
+        if must_resample:
             smult = str(span_multiplier)
             sdict = dict(second='S',minute='T',hour='H',day='D',
                          week='W',month='M',quarter='Q',year='A')
