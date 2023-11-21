@@ -16,6 +16,13 @@ import warnings
 import collections
 from   pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
 
+def plain_warning(w,wtype,wpath,wlnum,wdum,**kwargs):
+    wclass = str(wtype).split("'")[1]
+    wfile  = wpath.split('/')[-1]
+    return '\n'+wclass+': '+wfile+':'+str(wlnum)+': '+str(w)+'\n'
+
+warnings.formatwarning = plain_warning
+
 class PolygonApi(_PolygonApiBase):
     """
     Class to provide an instance of a python polygon.io API
@@ -266,6 +273,12 @@ class PolygonApi(_PolygonApiBase):
                tempdf.to_csv(cache_file)
             end_dtm   = self._input_to_datetime(end,'end')
             start_dtm = self._input_to_datetime(start,0)
+            dtm0 = tempdf.index[0]
+            dtm1 = tempdf.index[-1]
+            if start_dtm < dtm0:
+                warnings.warn('Requested start datetime outside of cache (i.e. unavailable)')
+            if end_dtm   > dtm1:
+                warnings.warn('Requested end datetime outside of cache (i.e. unavailable)')
             tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
