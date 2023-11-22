@@ -253,13 +253,12 @@ class PolygonApi(_PolygonApiBase):
                 expir = self._input_to_datetime(expir,'end')
                 cache_end = min(today,expir)
             else:
-                end_dtm = self._input_to_datetime(end,'end') + datetime.timedelta(days=30)
-                cache_end = min(today,end_dtm)
-            cache_start = cache_end - datetime.timedelta(days=91)
+                cache_end = today
+            cache_start = cache_end - datetime.timedelta(days=365)
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
             print('cache_start=',cache_start,'cache_end=',cache_end)
             tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span='minute',
-                                        span_multiplier=1,show_request=True)
+                                        span_multiplier=5,resample=False,show_request=True)
             return tempdf
             
         if cache:
@@ -287,7 +286,9 @@ class PolygonApi(_PolygonApiBase):
             tempdf = request_data()
         
         must_resample = ((span_multiplier > 1 and resample) or
-                         (cache and (span != 'minute' or span_multiplier > 1))
+                         (cache and (span != 'minute' or
+                          not (span=='minute' and span_multiplier==5))
+                         )
                         )
 
         if must_resample:
