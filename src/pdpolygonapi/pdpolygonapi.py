@@ -264,7 +264,7 @@ class PolygonApi(_PolygonApiBase):
             try:
                size = pathlib.Path(cache_file).stat().st_size
                if size > 0:
-                   print('using cache file',cache_file,'size=',size)
+                   #print('using cache file',cache_file,'size=',size)
                    tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
             except:
                print('cache not found, requesting data.')
@@ -276,9 +276,9 @@ class PolygonApi(_PolygonApiBase):
             dtm0 = tempdf.index[0]
             dtm1 = tempdf.index[-1]
             if start_dtm < dtm0:
-                warnings.warn('Requested start datetime outside of cache (i.e. unavailable)')
+                warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)')
             if end_dtm   > dtm1:
-                warnings.warn('Requested end datetime outside of cache (i.e. unavailable)')
+                warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)')
             tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
