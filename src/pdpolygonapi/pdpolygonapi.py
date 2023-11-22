@@ -181,6 +181,23 @@ class PolygonApi(_PolygonApiBase):
         if show_request:
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
+        def regular_market(tempdf):
+            if span in ('hour','minute','second') and market == 'regular':
+                dlist  = np.unique(tempdf.index.date)
+                #print('dlist=',dlist)
+                mktdf  = pd.DataFrame(columns=tempdf.columns)
+                mktdf.index.name = tempdf.index.name
+                for d in dlist:
+                    t1 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=9,minutes=30)
+                    t1 = t1.tz_convert(tz).tz_localize(tz=None)
+                    t2 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=16)
+                    t2 = t2.tz_convert(tz).tz_localize(tz=None)
+                    #print(t1,t2,'\n',tempdf.loc[t1:t2].head(),'\n')
+                    mktdf = pd.concat([mktdf,tempdf.loc[t1:t2]])
+                    #print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
+                tempdf = mktdf
+            return tempdf
+
         def request_data():
             rjson = self._req_get_json(req)
         
@@ -224,23 +241,8 @@ class PolygonApi(_PolygonApiBase):
             # Despite the above information, for now we will continue
             # to return 9:30 - 16:00 for "regular" trading hours.
             # =======================================================
-            
-            if span in ('hour','minute','second') and market == 'regular':
-                dlist  = np.unique(tempdf.index.date)
-                #print('dlist=',dlist)
-                mktdf  = pd.DataFrame(columns=tempdf.columns)
-                mktdf.index.name = tempdf.index.name
-                for d in dlist:
-                    t1 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=9,minutes=30)
-                    t1 = t1.tz_convert(tz).tz_localize(tz=None)
-                    t2 = pd.Timestamp(d,tz='US/Eastern') + pd.Timedelta(hours=16)
-                    t2 = t2.tz_convert(tz).tz_localize(tz=None)
-                    #print(t1,t2,'\n',tempdf.loc[t1:t2].head(),'\n')
-                    mktdf = pd.concat([mktdf,tempdf.loc[t1:t2]])
-                    #print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
-                tempdf = mktdf
 
-            return tempdf
+            return regular_market(tempdf)
 
         def request_data_to_cache():
             # Determine cache_start and cache_end
@@ -251,7 +253,8 @@ class PolygonApi(_PolygonApiBase):
                 expir = self._input_to_datetime(expir,'end')
                 cache_end = min(today,expir)
             else:
-                cache_end = today
+                end_dtm = self._input_to_datetime(end,'end') + datetime.timedelta(days=30)
+                cache_end = min(today,end_dtm)
             cache_start = cache_end - datetime.timedelta(days=91)
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
             print('cache_start=',cache_start,'cache_end=',cache_end)
@@ -301,7 +304,9 @@ class PolygonApi(_PolygonApiBase):
                   'Close' :'last',
                   'Volume':'sum'
                  })
-            tempdf = ntdf.bfill()
+            # resampling gets rid of regular market,
+            # so filter for regular market again:
+            tempdf = regular_market(ntdf.bfill())
             
         return tempdf
     
@@ -336,8 +341,9 @@ class PolygonApi(_PolygonApiBase):
             return self._strikes
 
         def get_strikes_by_expiration(self,expiration):
-            if str(expiration) in self._strikes:
-                return self._strikes[expiration]
+            exp = str(_PolygonApiBase._input_to_datetime(_PolygonApiBase,expiration).date())
+            if str(exp) in self._strikes:
+                return self._strikes[exp]
             return None
     
 
