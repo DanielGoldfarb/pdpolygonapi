@@ -277,6 +277,7 @@ class PolygonApi(_PolygonApiBase):
             start_dtm = self._input_to_datetime(start,0)
             dtm0 = tempdf.index[0]
             dtm1 = tempdf.index[-1]
+            print('dtm0,dtm1=',dtm0,dtm1)
             if start_dtm < dtm0:
                 warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)')
             if end_dtm   > dtm1:
@@ -290,6 +291,8 @@ class PolygonApi(_PolygonApiBase):
                           not (span=='minute' and span_multiplier==5))
                          )
                         )
+        # print('span_multiplier,resample,cache,span,must_resample=',
+        #       span_multiplier,resample,cache,span,must_resample)
 
         if must_resample:
             smult = str(span_multiplier)
@@ -298,6 +301,7 @@ class PolygonApi(_PolygonApiBase):
             freq  = smult+sdict[span]
             if span == 'day' and span_multiplier==7:
                freq = '1W'
+            # print('freq=',freq)
             ntdf = tempdf.resample(freq).agg(
                  {'Open'  :'first',
                   'High'  :'max',
