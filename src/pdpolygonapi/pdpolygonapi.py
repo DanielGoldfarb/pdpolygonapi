@@ -277,11 +277,14 @@ class PolygonApi(_PolygonApiBase):
             start_dtm = self._input_to_datetime(start,0)
             dtm0 = tempdf.index[0]
             dtm1 = tempdf.index[-1]
-            print('dtm0,dtm1=',dtm0,dtm1)
             if start_dtm < dtm0:
-                warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)')
+                print('dtm0,dtm1=',dtm0,dtm1)
+                warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
+                              'cache file: '+str(cache_file))
             if end_dtm   > dtm1:
-                warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)')
+                print('dtm0,dtm1=',dtm0,dtm1)
+                warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
+                              'cache file: '+str(cache_file))
             tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
