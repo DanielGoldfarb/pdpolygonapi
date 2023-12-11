@@ -61,8 +61,8 @@ class PolygonApi(_PolygonApiBase):
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _cache_file(self,ticker):
-        return (self._cache_dir() / (ticker+'.csv.gz'))
+    def _cache_file(self,ticker,span,span_multiplier):
+        return (self._cache_dir() / (ticker+'.'+str(span)+'.'+str(span_multiplier)+'.csv.gz'))
 
     def clear_ohlcv_cache(self,ticker):
         if ticker == 'all':
@@ -257,12 +257,12 @@ class PolygonApi(_PolygonApiBase):
             cache_start = cache_end - datetime.timedelta(days=365)
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
             print('cache_start=',cache_start,'cache_end=',cache_end)
-            tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span='minute',
-                                        span_multiplier=5,resample=False,show_request=True)
+            tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span=span,
+                          span_multiplier=span_multiplier,resample=False,show_request=True)
             return tempdf
             
         if cache:
-            cache_file = self._cache_file(ticker)
+            cache_file = self._cache_file(ticker,span,span_multiplier)
             try:
                size = pathlib.Path(cache_file).stat().st_size
                if size > 0:
@@ -271,31 +271,36 @@ class PolygonApi(_PolygonApiBase):
             except:
                print('cache not found, requesting data.')
                tempdf = request_data_to_cache()
-               print('caching data to file','"'+str(cache_file)+'"')
-               tempdf.to_csv(cache_file)
-            end_dtm   = self._input_to_datetime(end,'end')
-            start_dtm = self._input_to_datetime(start,0)
-            dtm0 = tempdf.index[0]
-            dtm1 = tempdf.index[-1]
-            if start_dtm < dtm0:
-                print('dtm0,dtm1=',dtm0,dtm1)
-                warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
-                              'cache file: '+str(cache_file))
-            if end_dtm   > dtm1:
-                print('dtm0,dtm1=',dtm0,dtm1)
-                warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
-                              'cache file: '+str(cache_file))
-            tempdf = tempdf.loc[start_dtm:end_dtm]
+               if len(tempdf) > 1:
+                   print('caching data to file','"'+str(cache_file)+'"')
+                   tempdf.to_csv(cache_file)
+            if len(tempdf) > 1:
+                end_dtm   = self._input_to_datetime(end,'end')
+                start_dtm = self._input_to_datetime(start,0)
+                dtm0 = tempdf.index[0]
+                dtm1 = tempdf.index[-1]
+                if start_dtm < dtm0:
+                    print('dtm0,dtm1=',dtm0,dtm1)
+                    warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
+                                  'cache file: '+str(cache_file))
+                if end_dtm   > dtm1:
+                    print('dtm0,dtm1=',dtm0,dtm1)
+                    warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
+                                  'cache file: '+str(cache_file))
+                tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
         
-        must_resample = ((span_multiplier > 1 and resample) or
-                         (cache and (span != 'minute' or
-                          not (span=='minute' and span_multiplier==5))
-                         )
-                        )
+        must_resample = (span_multiplier > 1 and resample)
         # print('span_multiplier,resample,cache,span,must_resample=',
         #       span_multiplier,resample,cache,span,must_resample)
+
+        # In a previous version, the cached data was always 5 minute data,
+        # and we used resampling to obtain requests for differen spans and/or
+        # span_multipliers.  However that resampling resulted in data for
+        # non-trading days; rather than deal somehow perhaps kludgy with 
+        # that issue, we now cache based on requested span and span_multiplier
+        # and do not resample cached data.
 
         if must_resample:
             smult = str(span_multiplier)
