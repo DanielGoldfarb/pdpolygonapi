@@ -254,11 +254,11 @@ class PolygonApi(_PolygonApiBase):
                 cache_end = min(today,expir)
             else:
                 cache_end = today
-            cache_start = cache_end - datetime.timedelta(days=365)
+            cache_start = cache_end - datetime.timedelta(days=int(2.1*365))
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
-            print('cache_start=',cache_start,'cache_end=',cache_end)
+            #print('cache_start=',cache_start,'cache_end=',cache_end)
             tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span=span,
-                          span_multiplier=span_multiplier,resample=False,show_request=True)
+                          span_multiplier=span_multiplier,resample=False,show_request=False)
             return tempdf
             
         if cache:
@@ -269,21 +269,27 @@ class PolygonApi(_PolygonApiBase):
                    #print('using cache file',cache_file,'size=',size)
                    tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
             except:
-               print('cache not found, requesting data.')
+               print('cache not found, requesting data for',ticker)
                tempdf = request_data_to_cache()
                if len(tempdf) > 1:
-                   print('caching data to file','"'+str(cache_file)+'"')
+                   #print('caching data to file','"'+str(cache_file)+'"')
                    tempdf.to_csv(cache_file)
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
                 start_dtm = self._input_to_datetime(start,0)
                 dtm0 = tempdf.index[0]
                 dtm1 = tempdf.index[-1]
-                if start_dtm < dtm0:
+
+                dd = 0.05*(dtm1 - dtm0)
+                if start_dtm.date() < (dtm0-dd).date():
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file: '+str(cache_file))
-                if end_dtm   > dtm1:
+
+                # For the end time, we don't warn for 5% over (meaning, depending on start
+                # time, we potentially got 95% of what we requested).
+                dd = 0.05*(dtm1 - dtm0)
+                if end_dtm.date()   > (dtm1+dd).date():
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file: '+str(cache_file))
