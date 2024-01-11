@@ -14,6 +14,8 @@ import datetime
 import numpy as np
 import warnings
 import collections
+#from  multiprocess    import Lock as MultiProcessLock # prefer
+from   multiprocessing import Lock as MultiProcessLock # more common
 from   pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
 
 def plain_warning(w,wtype,wpath,wlnum,wdum,**kwargs):
@@ -47,6 +49,8 @@ class PolygonApi(_PolygonApiBase):
     # 1. TEST WITH ALL SPANS
     # 2. ADD RESAMPLING TO HANDLE SPAN_MULTIPLIER
     # 3. MAYBE PASS SPAN_MULTIPLIER WHEN SPAN >= 'day' ?
+
+    cache_file_lock = MultiProcessLock()
 
     def __init__(self,envkey=None,apikey=None):
         if apikey is not None:
@@ -267,13 +271,17 @@ class PolygonApi(_PolygonApiBase):
                size = pathlib.Path(cache_file).stat().st_size
                if size > 0:
                    #print('using cache file',cache_file,'size=',size)
+                   PolygonApi.cache_file_lock.acquire()
                    tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
+                   PolygonApi.cache_file_lock.release()
             except:
                print('cache not found, requesting data for',ticker)
                tempdf = request_data_to_cache()
                if len(tempdf) > 1:
                    #print('caching data to file','"'+str(cache_file)+'"')
+                   PolygonApi.cache_file_lock.acquire()
                    tempdf.to_csv(cache_file)
+                   PolygonApi.cache_file_lock.release()
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
                 start_dtm = self._input_to_datetime(start,0)
