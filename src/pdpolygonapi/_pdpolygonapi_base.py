@@ -41,7 +41,12 @@ class _PolygonApiBase:
         r = requests.get(req)
         rjson = r.json()
         if 'results' not in rjson:
-            message = rjson['message'] if 'message' in rjson else 'No results returned!'
+            if 'message' in rjson:
+                message = rjson['message']
+            elif 'error' in rjson:
+                message = rjson['error']
+            else:
+                message = 'No results returned for req='+str(req)
             warnings.warn('\n'+message)
         return rjson
         

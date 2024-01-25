@@ -65,8 +65,13 @@ class PolygonApi(_PolygonApiBase):
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _cache_file(self,ticker,span,span_multiplier):
-        return (self._cache_dir() / (ticker+'.'+str(span)+'.'+str(span_multiplier)+'.csv.gz'))
+    def _cache_file(self,ticker,span,span_multiplier,year=''):
+        if isinstance(year,int) and year > 1970 and year < 2100:
+            return (self._cache_dir() / (ticker+'.'+str(span)+'.'+str(span_multiplier)+'.'+str(year)+'.csv.gz'))
+        elif isinstance(year,int):
+            raise ValueError('Bad year='+str(year))
+        else:
+            return (self._cache_dir() / (ticker+'.'+str(span)+'.'+str(span_multiplier)+'.csv.gz'))
 
     def clear_ohlcv_cache(self,ticker):
         if ticker == 'all':
@@ -185,6 +190,13 @@ class PolygonApi(_PolygonApiBase):
         if show_request:
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
+        if cache and not ticker[0:2] == 'O:':
+            y0 = self._input_to_datetime(start).year
+            y1 = self._input_to_datetime(end).year
+            years = [y for y in range(y0,y1+1)]
+        else:
+            years = None
+
         def regular_market(tempdf):
             if span in ('hour','minute','second') and market == 'regular':
                 dlist  = np.unique(tempdf.index.date)
@@ -248,40 +260,57 @@ class PolygonApi(_PolygonApiBase):
 
             return regular_market(tempdf)
 
-        def request_data_to_cache():
+        def request_data_to_cache(year=None):
             # Determine cache_start and cache_end
             today = self._input_to_datetime(0,'end')
             if ticker[0:2] == 'O:': # get option expiration:
                 ix = re.search('\d',ticker).start()
                 expir = '20'+ticker[ix:ix+2]+'-'+ticker[ix+2:ix+4]+'-'+ticker[ix+4:ix+6]
                 expir = self._input_to_datetime(expir,'end')
-                cache_end = min(today,expir)
+                cache_end   = min(today,expir)
+                cache_start = cache_end - datetime.timedelta(days=int(366))
+            elif year:
+                cache_end   = datetime.datetime(year,12,31)
+                cache_start = datetime.datetime(year, 1, 1)
             else:
-                cache_end = today
-            cache_start = cache_end - datetime.timedelta(days=int(2.1*365))
+                cache_end   = today
+                cache_start = cache_end - datetime.timedelta(days=int(366))
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
-            #print('cache_start=',cache_start,'cache_end=',cache_end)
+            cache_end   = cache_end.replace(hour=23,minute=59,second=59,microsecond=999999)
+            print('cache_start=',cache_start,'cache_end=',cache_end)
             tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span=span,
-                          span_multiplier=span_multiplier,resample=False,show_request=False)
+                                        span_multiplier=span_multiplier,resample=False,
+                                        show_request=True,cache=False)
             return tempdf
             
         if cache:
-            cache_file = self._cache_file(ticker,span,span_multiplier)
-            try:
-               size = pathlib.Path(cache_file).stat().st_size
-               if size > 0:
-                   #print('using cache file',cache_file,'size=',size)
-                   PolygonApi.cache_file_lock.acquire()
-                   tempdf = pd.read_csv(cache_file,index_col=0,parse_dates=True)
-                   PolygonApi.cache_file_lock.release()
-            except:
-               print('cache not found, requesting data for',ticker)
-               tempdf = request_data_to_cache()
-               if len(tempdf) > 1:
-                   #print('caching data to file','"'+str(cache_file)+'"')
-                   PolygonApi.cache_file_lock.acquire()
-                   tempdf.to_csv(cache_file)
-                   PolygonApi.cache_file_lock.release()
+            cache_files = []
+            if years:
+                for year in years:
+                    cache_files.append(self._cache_file(ticker,span,span_multiplier,year))
+            else:
+                cache_files.append(self._cache_file(ticker,span,span_multiplier))
+
+            tempdf = pd.DataFrame()
+            for jj,cf in enumerate(cache_files):
+                year = years[jj] if years else None
+                try:
+                   size = pathlib.Path(cf).stat().st_size
+                   if size > 0:
+                       print('using cache file',cf,'size=',size)
+                       PolygonApi.cache_file_lock.acquire()
+                       tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
+                       PolygonApi.cache_file_lock.release()
+                except:
+                   print('cache not found, requesting data for cache file:',cf)
+                   cache_df = request_data_to_cache(year)
+                   if len(cache_df) > 1:
+                       print('caching data to file','"'+str(cf)+'"')
+                       PolygonApi.cache_file_lock.acquire()
+                       cache_df.to_csv(cf)
+                       PolygonApi.cache_file_lock.release()
+                       tempdf = pd.concat([tempdf, cache_df])
+
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
                 start_dtm = self._input_to_datetime(start,0)
@@ -292,7 +321,7 @@ class PolygonApi(_PolygonApiBase):
                 if start_dtm.date() < (dtm0-dd).date():
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
-                                  'cache file: '+str(cache_file))
+                                  'cache file(s): '+str(cache_files))
 
                 # For the end time, we don't warn for 5% over (meaning, depending on start
                 # time, we potentially got 95% of what we requested).
@@ -300,7 +329,7 @@ class PolygonApi(_PolygonApiBase):
                 if end_dtm.date()   > (dtm1+dd).date():
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
-                                  'cache file: '+str(cache_file))
+                                  'cache file(s): '+str(cache_files))
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
