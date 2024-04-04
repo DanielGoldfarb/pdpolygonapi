@@ -50,7 +50,30 @@ class PolygonApi(_PolygonApiBase):
     # 2. ADD RESAMPLING TO HANDLE SPAN_MULTIPLIER
     # 3. MAYBE PASS SPAN_MULTIPLIER WHEN SPAN >= 'day' ?
 
+    # --------------------------------------------------------------------- #
+    # Note: regarding the cache_file_lock:  We want to lock to avoid having
+    #       one process reading a cache file while another process is in the
+    #       middle of writing a cache file.  (This is so we can multiprocess
+    #       many model scenarios at the same time).  It turns out that the
+    #       lock is costly, slowing down a job of 24 scenarios on 8 cores by
+    #       two and a half times.  I was locking all reads and writes to all
+    #       cache files.  But then I realized that created more contention
+    #       than necessary: maybe it makes sense to have a separate lock for
+    #       each file.  Then (before implementing that) it occured to me that
+    #       once we "know" that a cache file exists, there is no longer a need
+    #       to lock since multiple simulateous reads are fine.  So that is 
+    #       what I am going to implement next: Only lock for each cache until
+    #       we know that we have a cache file for that request.
+
     cache_file_lock = MultiProcessLock()
+    cached_files    = dict()
+    def cflock_acquire():
+        PolygonApi.cache_file_lock.acquire()
+    def cflock_release():
+        try:
+            PolygonApi.cache_file_lock.release()
+        except:
+            pass
 
     def __init__(self,envkey=None,apikey=None):
         if apikey is not None:
@@ -191,10 +214,18 @@ class PolygonApi(_PolygonApiBase):
             print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
         if cache and not ticker[0:2] == 'O:':
+            # non-options cache to individual files per year:
             y0 = self._input_to_datetime(start).year
             y1 = self._input_to_datetime(end).year
             years = [y for y in range(y0,y1+1)]
         else:
+            # options cache to one file for all years:
+            #   wondering if we should perhaps do options the same as non-options
+            #   that is, one file per year, even though generally options that are
+            #   not LEAPS will have much less data; however having one method
+            #   will likely make the code simpler (and, as it is, we will also
+            #   distinguish the case of looking for data for only TODAY will not
+            #   be cached).
             years = None
 
         def regular_market(tempdf):
@@ -294,22 +325,25 @@ class PolygonApi(_PolygonApiBase):
             tempdf = pd.DataFrame()
             for jj,cf in enumerate(cache_files):
                 year = years[jj] if years else None
+                if cf not in PolygonApi.cached_files:
+                    PolygonApi.cflock_acquire()
                 try:
                    size = pathlib.Path(cf).stat().st_size
                    if size > 0:
-                       print('using cache file',cf,'size=',size)
-                       PolygonApi.cache_file_lock.acquire()
+                       # print('using cache file',cf,'size=',size)
                        tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                       PolygonApi.cache_file_lock.release()
+                       PolygonApi.cached_files[cf] = True
+                       PolygonApi.cflock_release()
+                   else:
+                       raise RuntimeError('Found zero byte cache file:'+cf)
                 except:
                    print('cache not found, requesting data for cache file:',cf)
                    cache_df = request_data_to_cache(year)
                    if len(cache_df) > 1:
                        print('caching data to file','"'+str(cf)+'"')
-                       PolygonApi.cache_file_lock.acquire()
                        cache_df.to_csv(cf)
-                       PolygonApi.cache_file_lock.release()
                        tempdf = pd.concat([tempdf, cache_df])
+                   PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
@@ -472,7 +506,7 @@ class PolygonApi(_PolygonApiBase):
             if show_request:
                 print('req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
             else:
-                print('Requesting data ...',end='')
+                print('Requesting options chain data ...',end='')
             rd = self._req_get_json(req)
             if 'results' not in rd:
                totdf = pd.DataFrame(columns=['contract_type','expiration_date','strike_price','ticker'])
