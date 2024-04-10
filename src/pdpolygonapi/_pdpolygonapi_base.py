@@ -46,7 +46,8 @@ class _PolygonApiBase:
             elif 'error' in rjson:
                 message = rjson['error']
             else:
-                message = 'No results returned for req='+str(req)
+                sreq = str(req)[:req.find('&apiKey=')]+'&apiKey=***'
+                message = 'No results returned for req='+sreq
             warnings.warn('\n'+message)
         return rjson
         
