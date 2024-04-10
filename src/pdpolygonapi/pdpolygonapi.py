@@ -309,6 +309,7 @@ class PolygonApi(_PolygonApiBase):
                    if size > 0:
                        # print('using cache file',cf,'size=',size)
                        tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
+                       print('tempdf(1):\n',tempdf)
                        PolygonApi.cached_files[cf] = True
                        PolygonApi.cflock_release()
                    else:
@@ -320,6 +321,7 @@ class PolygonApi(_PolygonApiBase):
                        print('caching data to file','"'+str(cf)+'"')
                        cache_df.to_csv(cf)
                        tempdf = pd.concat([tempdf, cache_df])
+                   print('tempdf(2):\n',tempdf)
                    PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
@@ -341,6 +343,8 @@ class PolygonApi(_PolygonApiBase):
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
+                print('tempdf(3):\n',tempdf)
+                print('start_dtm:end_dtm=',start_dtm,':',end_dtm)
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
