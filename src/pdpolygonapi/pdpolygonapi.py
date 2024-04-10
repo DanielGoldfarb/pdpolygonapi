@@ -321,15 +321,16 @@ class PolygonApi(_PolygonApiBase):
                     if not size > 0:
                         print('Found zero byte cache file:'+cf)
                         raise RuntimeError('Found zero byte cache file:'+cf)
-                    tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                    print('tempdf(1)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
-                    # if year == years[-1]:
-                    #     end_dtm = self._input_to_datetime(end)
-                    #     dtm1 = tempdf.index[-1]
-                    #     print('year,end_dtm,dtm1=',year,end_dtm,dtm1)
-                    #     if end_dtm > dtm1:
-                    #         print('cache (',cf,') too short ... requesting more data.')
-                    #         raise RuntimeError('cache (',cf,') too short ... requesting more data.')
+                    nextdf = pd.read_csv(cf,index_col=0,parse_dates=True)
+                    print('nextdf(1)=\n',nextdf.iloc[[0,-1]],'\n',len(nextdf),'rows.\n')
+                    if year == years[-1]:
+                        end_dtm = self._input_to_datetime(end)
+                        dtm1 = nextdf.index[-1]
+                        print('year,end_dtm,dtm1=',year,end_dtm,dtm1)
+                        if end_dtm > dtm1:
+                            print('cache (',cf,') too short ... requesting more data.')
+                            raise RuntimeError('cache (',cf,') too short ... requesting more data.')
+                    tempdf = pd.concat([tempdf,nextdf])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
@@ -363,7 +364,11 @@ class PolygonApi(_PolygonApiBase):
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
                 print('tempdf(3)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
+                print('type(start_dtm)',type(start_dtm))
+                print('type(end_dtm)',type(end_dtm))
                 print('start_dtm:end_dtm=',start_dtm,':',end_dtm)
+                #import pdb
+                #pdb.set_trace()
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
