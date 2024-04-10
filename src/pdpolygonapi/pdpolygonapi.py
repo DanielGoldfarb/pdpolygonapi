@@ -211,6 +211,10 @@ class PolygonApi(_PolygonApiBase):
         else:
             years = None
 
+        print('DEBUG: years=',years)
+        print('DEBUG: start,end',start,end)
+        print('DEBUG: req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+
         def regular_market(tempdf):
             if span in ('hour','minute','second') and market == 'regular':
                 dlist  = np.unique(tempdf.index.date)
