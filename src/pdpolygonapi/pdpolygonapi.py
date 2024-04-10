@@ -302,6 +302,7 @@ class PolygonApi(_PolygonApiBase):
                     cache_files.append(self._cache_file(ticker,span,span_multiplier,year))
             else:
                 print('not `years` ... THIS SHOULD NOT HAPPEN ANYMORE!')
+                raise RuntimeError('if `cache`, then should always have `years`')
 
             tempdf = pd.DataFrame()
             for jj,cf in enumerate(cache_files):
@@ -322,6 +323,13 @@ class PolygonApi(_PolygonApiBase):
                         raise RuntimeError('Found zero byte cache file:'+cf)
                     tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
                     print('tempdf(1)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
+                    # if year == years[-1]:
+                    #     end_dtm = self._input_to_datetime(end)
+                    #     dtm1 = tempdf.index[-1]
+                    #     print('year,end_dtm,dtm1=',year,end_dtm,dtm1)
+                    #     if end_dtm > dtm1:
+                    #         print('cache (',cf,') too short ... requesting more data.')
+                    #         raise RuntimeError('cache (',cf,') too short ... requesting more data.')
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
