@@ -306,27 +306,34 @@ class PolygonApi(_PolygonApiBase):
             tempdf = pd.DataFrame()
             for jj,cf in enumerate(cache_files):
                 year = years[jj] if years else None
-                if cf not in PolygonApi.cached_files:
-                    PolygonApi.cflock_acquire()
+                if cf in PolygonApi.cached_files:
+                    # We have already, at least once in this instance, encountered
+                    # this cache file; therefore this `read_csv()` should work ok:
+                    tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
+                    print('read-in cache file:',cf)
+                    print('tempdf =\n',tempdf.iloc[[0,-1]])
+                    continue
                 try:
-                   size = pathlib.Path(cf).stat().st_size
-                   if size > 0:
-                       # print('using cache file',cf,'size=',size)
-                       tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                       print('tempdf(1):\n',tempdf)
-                       PolygonApi.cached_files[cf] = True
-                       PolygonApi.cflock_release()
-                   else:
-                       raise RuntimeError('Found zero byte cache file:'+cf)
+                    PolygonApi.cflock_acquire()
+                    size = pathlib.Path(cf).stat().st_size
+                    # print('using cache file',cf,'size=',size)
+                    if not size > 0:
+                        print('Found zero byte cache file:'+cf)
+                        raise RuntimeError('Found zero byte cache file:'+cf)
+                    tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
+                    print('tempdf(1):\n',tempdf)
+                    PolygonApi.cached_files[cf] = True
+                    PolygonApi.cflock_release()
                 except:
-                   print('cache not found, requesting data for cache file:',cf)
-                   cache_df = request_data_to_cache(year)
-                   if len(cache_df) > 1:
-                       print('caching data to file','"'+str(cf)+'"')
-                       cache_df.to_csv(cf)
-                       tempdf = pd.concat([tempdf, cache_df])
-                   print('tempdf(2):\n',tempdf)
-                   PolygonApi.cflock_release()
+                    print('cache not found, requesting data for cache file:',cf)
+                    cache_df = request_data_to_cache(year)
+                    if len(cache_df) > 1:
+                        print('caching data to file','"'+str(cf)+'"')
+                        cache_df.to_csv(cf)
+                        tempdf = pd.concat([tempdf, cache_df])
+                    PolygonApi.cached_files[cf] = True
+                    print('tempdf(2):\n',tempdf)
+                    PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
