@@ -311,7 +311,7 @@ class PolygonApi(_PolygonApiBase):
                     # this cache file; therefore this `read_csv()` should work ok:
                     tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
                     print('read-in cache file:',cf)
-                    print('tempdf =\n',tempdf.iloc[[0,-1]])
+                    print('tempdf(0)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                     continue
                 try:
                     PolygonApi.cflock_acquire()
@@ -321,7 +321,7 @@ class PolygonApi(_PolygonApiBase):
                         print('Found zero byte cache file:'+cf)
                         raise RuntimeError('Found zero byte cache file:'+cf)
                     tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                    print('tempdf(1):\n',tempdf)
+                    print('tempdf(1)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
@@ -332,7 +332,7 @@ class PolygonApi(_PolygonApiBase):
                         cache_df.to_csv(cf)
                         tempdf = pd.concat([tempdf, cache_df])
                     PolygonApi.cached_files[cf] = True
-                    print('tempdf(2):\n',tempdf)
+                    print('tempdf(2)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                     PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
@@ -354,7 +354,7 @@ class PolygonApi(_PolygonApiBase):
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
-                print('tempdf(3):\n',tempdf)
+                print('tempdf(3)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                 print('start_dtm:end_dtm=',start_dtm,':',end_dtm)
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
