@@ -146,7 +146,7 @@ class PolygonApi(_PolygonApiBase):
         cache (bool) : Create and/or use cache files.  Cache files are under
                        `Path.home()/.pdpolygonapi/ohlcv_cache/` keyed by
                        ticker symbol, span, span_multiplier, and year.
-                       
+
         span_multiplier (int): SEE ALSO `resample`.  If span_multiplier > 1 then
                         the time between adjacent data points is (span * span_multipler).
                         If `resample`, then span_multipler is implemented by resampling
@@ -283,7 +283,6 @@ class PolygonApi(_PolygonApiBase):
             else:
                 cache_end   = today
                 cache_start = datetime.datetime(today.year, 1, 1)
-
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
             cache_end   = cache_end.replace(hour=23,minute=59,second=59,microsecond=999999)
             print('cache_start=',cache_start,'cache_end=',cache_end)
@@ -299,48 +298,36 @@ class PolygonApi(_PolygonApiBase):
                     cache_files.append(self._cache_file(ticker,span,span_multiplier,year))
             else:
                 print('not `years` ... THIS SHOULD NOT HAPPEN ANYMORE!')
-                cache_files.append(self._cache_file(ticker,span,span_multiplier))
 
             tempdf = pd.DataFrame()
             for jj,cf in enumerate(cache_files):
                 year = years[jj] if years else None
-                if cf in PolygonApi.cached_files:
-                    # We have already, at least once in this instance, encountered
-                    # this cache file; therefore this `read_csv()` should work ok:
-                    tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                    print('Read cache file:',cf)
-                    continue
-                try:
+                if cf not in PolygonApi.cached_files:
                     PolygonApi.cflock_acquire()
-                    size = pathlib.Path(cf).stat().st_size
-                    # print('using cache file',cf,'size=',size)
-                    if not size > 0:
-                        print('Found zero byte cache file:'+cf)
-                        raise RuntimeError('Found zero byte cache file:'+cf)
-                    tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                    if year == years[-1]:
-                        end_dtm = self._input_to_datetime(end)
-                        dtm1 = tempdf.index[-1]
-                        if end_dtm > dtm1:
-                            print('cache (',cf,') too short ... requesting more data.')
-                            raise RuntimeError('cache (',cf,') too short ... requesting more data.')
-                    PolygonApi.cached_files[cf] = True
-                    PolygonApi.cflock_release()
+                try:
+                   size = pathlib.Path(cf).stat().st_size
+                   if size > 0:
+                       # print('using cache file',cf,'size=',size)
+                       tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
+                       PolygonApi.cached_files[cf] = True
+                       PolygonApi.cflock_release()
+                   else:
+                       raise RuntimeError('Found zero byte cache file:'+cf)
                 except:
-                    print('cache not found, requesting data for cache file:',cf)
-                    cache_df = request_data_to_cache(year)
-                    if len(cache_df) > 1:
-                        print('caching data to file','"'+str(cf)+'"')
-                        cache_df.to_csv(cf)
-                        tempdf = pd.concat([tempdf, cache_df])
-                    PolygonApi.cached_files[cf] = True
-                    PolygonApi.cflock_release()
+                   print('cache not found, requesting data for cache file:',cf)
+                   cache_df = request_data_to_cache(year)
+                   if len(cache_df) > 1:
+                       print('caching data to file','"'+str(cf)+'"')
+                       cache_df.to_csv(cf)
+                       tempdf = pd.concat([tempdf, cache_df])
+                   PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
                 end_dtm   = self._input_to_datetime(end,'end')
                 start_dtm = self._input_to_datetime(start,0)
                 dtm0 = tempdf.index[0]
                 dtm1 = tempdf.index[-1]
+
                 dd = 0.05*(dtm1 - dtm0)
                 if start_dtm.date() < (dtm0-dd).date():
                     print('dtm0,dtm1=',dtm0,dtm1)
@@ -354,7 +341,6 @@ class PolygonApi(_PolygonApiBase):
                     print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
-                print('>>>> tempdf=\n',tempdf)
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()
