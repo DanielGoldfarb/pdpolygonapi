@@ -31,7 +31,7 @@ NOTE: It is strongly recommended that you store your Polygon.io APIKEY in an ENV
 
 ---
 
-Copyright 2023, Daniel Goldfarb, dgoldfarb.github@gmail.com
+Copyright 2023, 2024 Daniel Goldfarb, dgoldfarb.github@gmail.com
 
 Licensed under the Apache License, Version 2.0 (the "License");  you may not 
 use this package and its associated files except in compliance with the License.
