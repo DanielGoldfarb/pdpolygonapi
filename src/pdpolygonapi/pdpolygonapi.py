@@ -9,11 +9,9 @@ import pandas as pd
 import requests
 import os
 import pathlib
-import re
 import datetime
 import numpy as np
 import warnings
-import collections
 #from  multiprocess    import Lock as MultiProcessLock # prefer
 from   multiprocessing import Lock as MultiProcessLock # more common
 from   pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
@@ -57,7 +55,7 @@ class PolygonApi(_PolygonApiBase):
     #       many model scenarios at the same time).  It turns out that the
     #       lock is costly, slowing down a job of 24 scenarios on 8 cores by
     #       two and a half times.  I was locking all reads and writes to all
-    #       cache files.  But then I realized that created more contention
+    #       cache files.  But then I realized, that created more contention
     #       than necessary: maybe it makes sense to have a separate lock for
     #       each file.  Then (before implementing that) it occured to me that
     #       once we "know" that a cache file exists, there is no longer a need
@@ -75,13 +73,17 @@ class PolygonApi(_PolygonApiBase):
         except:
             pass
 
-    def __init__(self,envkey=None,apikey=None):
+    def __init__(self,envkey=None,apikey=None,debug=False):
         if apikey is not None:
             self.APIKEY = apikey
         elif envkey is not None:
             self.APIKEY=os.environ.get(envkey)
         else:
             self.APIKEY=os.environ.get('POLYGON_API')
+        self.DEBUG = debug
+
+    def debug(self,debug=True):
+        self.DEBUG = debug
 
     def _cache_dir(self):
         cache_dir = (pathlib.Path.home() / '.pdpolygonapi/ohlcv_cache')
@@ -94,6 +96,9 @@ class PolygonApi(_PolygonApiBase):
         elif isinstance(year,int):
             raise ValueError('Bad year='+str(year))
         else:
+            warnings.warn('\n=========\n'+
+                          'This REALLY should NOT happen anymore!  Rather, always cache by YEAR!\n'+
+                          '===========\n')
             return (self._cache_dir() / (ticker+'.'+str(span)+'.'+str(span_multiplier)+'.csv.gz'))
 
     def clear_ohlcv_cache(self,ticker):
@@ -211,9 +216,10 @@ class PolygonApi(_PolygonApiBase):
         else:
             years = None
 
-        print('DEBUG: years=',years)
-        print('DEBUG: start,end',start,end)
-        print('DEBUG: req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
+        if self.DEBUG:
+            print('DEBUG: years=',years)
+            print('DEBUG: start,end',start,end)
+            print('DEBUG: req=\n',req[:req.find('&apiKey=')]+'&apiKey=***')
 
         def regular_market(tempdf):
             if span in ('hour','minute','second') and market == 'regular':
@@ -242,7 +248,7 @@ class PolygonApi(_PolygonApiBase):
             #print('len(tempdf)=',len(tempdf))
             if 'next_url' in rjson: 
                 while 'next_url' in rjson:
-                    print('\n==> GETTING NEXT URL:',rjson['next_url'])
+                    if self.DEBUG: print('\n==> GETTING NEXT URL:',rjson['next_url'])
                     nxtr=rjson['next_url']+'&apikey='+self.APIKEY
                     rjson = self._req_get_json(nxtr)
                     tempdf = pd.concat([tempdf,self._json_response_to_ohlcvdf(span,rjson)])
@@ -289,7 +295,7 @@ class PolygonApi(_PolygonApiBase):
                 cache_start = datetime.datetime(today.year, 1, 1)
             cache_start = cache_start.replace(hour=0,minute=0,second=0,microsecond=0)
             cache_end   = cache_end.replace(hour=23,minute=59,second=59,microsecond=999999)
-            print('cache_start=',cache_start,'cache_end=',cache_end)
+            if self.DEBUG: print('cache_start=',cache_start,'cache_end=',cache_end)
             tempdf = self.fetch_ohlcvdf(ticker,start=cache_start,end=cache_end,span=span,
                                         span_multiplier=span_multiplier,resample=False,
                                         show_request=True,cache=False)
@@ -311,8 +317,8 @@ class PolygonApi(_PolygonApiBase):
                     # We have already, at least once in this instance, encountered
                     # this cache file; therefore this `read_csv()` should work ok:
                     tempdf = pd.concat([tempdf, pd.read_csv(cf,index_col=0,parse_dates=True)])
-                    print('read-in cache file:',cf)
-                    print('tempdf(0)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
+                    if self.DEBUG: print('read-in cache file:',cf)
+                    if self.DEBUG: print('tempdf(0)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                     continue
                 try:
                     PolygonApi.cflock_acquire()
@@ -322,26 +328,26 @@ class PolygonApi(_PolygonApiBase):
                         print('Found zero byte cache file:'+cf)
                         raise RuntimeError('Found zero byte cache file:'+cf)
                     nextdf = pd.read_csv(cf,index_col=0,parse_dates=True)
-                    print('nextdf(1)=\n',nextdf.iloc[[0,-1]],'\n',len(nextdf),'rows.\n')
+                    if self.DEBUG: print('nextdf(1)=\n',nextdf.iloc[[0,-1]],'\n',len(nextdf),'rows.\n')
                     if year == years[-1]:
                         end_dtm = self._input_to_datetime(end)
                         dtm1 = nextdf.index[-1]
-                        print('year,end_dtm,dtm1=',year,end_dtm,dtm1)
+                        if self.DEBUG: print('year,end_dtm,dtm1=',year,end_dtm,dtm1)
                         if end_dtm > dtm1:
-                            print('cache (',cf,') too short ... requesting more data.')
+                            if self.DEBUG: print('cache (',cf,') too short ... requesting more data.')
                             raise RuntimeError('cache (',cf,') too short ... requesting more data.')
                     tempdf = pd.concat([tempdf,nextdf])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
-                    print('cache not found, requesting data for cache file:',cf)
+                    if self.DEBUG: print('cache not found, requesting data for cache file:',cf)
                     cache_df = request_data_to_cache(year)
                     if len(cache_df) > 1:
-                        print('caching data to file','"'+str(cf)+'"')
+                        if self.DEBUG: print('caching data to file','"'+str(cf)+'"')
                         cache_df.to_csv(cf)
                         tempdf = pd.concat([tempdf, cache_df])
                     PolygonApi.cached_files[cf] = True
-                    print('tempdf(2)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
+                    if self.DEBUG: print('tempdf(2)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
                     PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
@@ -352,7 +358,7 @@ class PolygonApi(_PolygonApiBase):
 
                 dd = 0.05*(dtm1 - dtm0)
                 if start_dtm.date() < (dtm0-dd).date():
-                    print('dtm0,dtm1=',dtm0,dtm1)
+                    if self.DEBUG: print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested START '+str(start_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
 
@@ -360,13 +366,13 @@ class PolygonApi(_PolygonApiBase):
                 # time, we potentially got 95% of what we requested).
                 dd = 0.05*(dtm1 - dtm0)
                 if end_dtm.date()   > (dtm1+dd).date():
-                    print('dtm0,dtm1=',dtm0,dtm1)
+                    if self.DEBUG: print('dtm0,dtm1=',dtm0,dtm1)
                     warnings.warn('Requested END '+str(end_dtm)+' outside of cache (i.e. unavailable)\n'+
                                   'cache file(s): '+str(cache_files))
-                print('tempdf(3)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
-                print('type(start_dtm)',type(start_dtm))
-                print('type(end_dtm)',type(end_dtm))
-                print('start_dtm:end_dtm=',start_dtm,':',end_dtm)
+                if self.DEBUG: print('tempdf(3)=\n',tempdf.iloc[[0,-1]],'\n',len(tempdf),'rows.\n')
+                if self.DEBUG: print('type(start_dtm)',type(start_dtm))
+                if self.DEBUG: print('type(end_dtm)',type(end_dtm))
+                if self.DEBUG: print('start_dtm:end_dtm=',start_dtm,':',end_dtm)
                 #import pdb
                 #pdb.set_trace()
                 tempdf = tempdf.loc[start_dtm:end_dtm]
@@ -561,7 +567,7 @@ class PolygonApi(_PolygonApiBase):
     
         rd  = requests.get(req).json()
         
-        print('response status:',rd['status'])#,'  response keys:',rd.keys())
+        if self.DEBUG: print('response status:',rd['status'])#,'  response keys:',rd.keys())
         
         columns = ['Ask','AsizeA','AsizeM','AsizeH','AsizeL',
                   'Bid','BsizeA','BsizeM','BsizeH','BsizeL','Count']
@@ -583,19 +589,19 @@ class PolygonApi(_PolygonApiBase):
         qdf = pd.DataFrame(rd['results'])
         ts = [pd.Timestamp(t,tz='UTC') for t in qdf.sip_timestamp]
         qdf.index = pd.DatetimeIndex(ts)
-        print('received',len(qdf),'quotes so far ...')
+        if self.DEBUG: print('received',len(qdf),'quotes so far ...')
         
         while rd['status']=='OK' and 'next_url' in rd:
-            print('getting next_url ... ',end='')#,rd['next_url'])
+            if self.DEBUG: print('getting next_url ... ',end='')#,rd['next_url'])
             req = rd['next_url']+'&apikey='+self.APIKEY
             rd  = requests.get(req).json()
-            print('response status:',rd['status'],end='  ')#,'  response keys:',rd.keys())
+            if self.DEBUG: print('response status:',rd['status'],end='  ')#,'  response keys:',rd.keys())
             tdf = pd.DataFrame(rd['results'])
             ts = [pd.Timestamp(t,tz='UTC') for t in tdf.sip_timestamp]
             tdf.index = pd.DatetimeIndex(ts)
             qdf = pd.concat([qdf,tdf])
             if 'next_url' in rd:
-                print('received',len(qdf),'quotes so far ...')
+                if self.DEBUG: print('received',len(qdf),'quotes so far ...')
             else:
                 print('received',len(qdf),'quotes.')
     
