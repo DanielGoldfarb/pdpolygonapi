@@ -173,6 +173,18 @@ class PolygonApi(_PolygonApiBase):
         `span` and `span_multiplier`
 
         """    
+#        def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
+#                          span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
+        if self.DEBUG:
+            print('fetch_ohlcvdf: ticker=',ticker)
+            print('fetch_ohlcvdf: start =',start)
+            print('fetch_ohlcvdf: end   =',end)
+            print('fetch_ohlcvdf: market=',market)
+            print('fetch_ohlcvdf: cache =',cache )
+            print('fetch_ohlcvdf: span_multiplier=',span_multiplier)
+            print('fetch_ohlcvdf: resample=',resample)
+            print('fetch_ohlcvdf: tz    =',tz)
+            print('fetch_ohlcvdf: show_request=',show_request)
         
         valid_markets = ('regular','all')
         if market not in valid_markets:
@@ -523,7 +535,8 @@ class PolygonApi(_PolygonApiBase):
                totdf = pd.DataFrame(columns=['contract_type','expiration_date','strike_price','ticker'])
                break
             rdf = pd.DataFrame(rd['results'])
-            rdf.drop(['cfi','exercise_style','primary_exchange','shares_per_contract','underlying_ticker'],axis=1,inplace=True)
+            rdf.drop(['cfi','exercise_style','primary_exchange',
+                      'shares_per_contract','underlying_ticker'],axis=1,inplace=True)
             if totdf is None: totdf = pd.DataFrame(columns=rdf.columns)
             totdf = pd.concat([totdf,rdf])
             while 'next_url' in rd:
@@ -534,8 +547,10 @@ class PolygonApi(_PolygonApiBase):
                 if 'results' not in rd:
                     break
                 rdf = pd.DataFrame(rd['results'])
-                rdf.drop(['cfi','exercise_style','primary_exchange','shares_per_contract','underlying_ticker'],axis=1,inplace=True)
+                rdf.drop(['cfi','exercise_style','primary_exchange',
+                          'shares_per_contract','underlying_ticker'],axis=1,inplace=True)
                 totdf = pd.concat([totdf,rdf])
+            if not show_request: print()
                 
         totdf.rename(columns={'contract_type':'Type',
                               'expiration_date':'Expiration',
