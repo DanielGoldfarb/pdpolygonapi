@@ -6,38 +6,40 @@
 #  do NOT call this class directly.
 # ---
 
-import pandas as pd
-import requests
 import datetime
 import warnings
 
+import pandas as pd
+import requests
+
+
 class _PolygonApiBase:
-    _OHLCV_COLMAP = dict(o='Open',h='High',
-                         l='Low',c='Close',
-                         v='Volume')#,vw='VolWgtPx')
+    _OHLCV_COLMAP = dict(o='Open', h='High',
+                         l='Low', c='Close',
+                         v='Volume')  # ,vw='VolWgtPx')
 
     def __init__(self):
-        self.APIKEY = None    
-            
-    def _input_to_datetime(self,input,adj=None):
-        if isinstance(input,int):
+        self.APIKEY = None
+
+    def _input_to_datetime(self, input, adj=None):
+        if isinstance(input, int):
             dtm = datetime.datetime.today() + datetime.timedelta(days=input)
-        elif isinstance(input,str):
+        elif isinstance(input, str):
             dtm = pd.Timestamp(input).to_pydatetime()
         else:
             dtm = input
         if adj == 0:
-            dtm = dtm.replace(hour=0,minute=0,second=0,microsecond=0)
+            dtm = dtm.replace(hour=0, minute=0, second=0, microsecond=0)
         elif adj is not None:
-            dtm = dtm.replace(hour=23,minute=59,second=59,microsecond=99999)
+            dtm = dtm.replace(hour=23, minute=59, second=59, microsecond=99999)
         return dtm
 
-    def _input_to_mstimestamp(self,input,adj=None):
-        dtm = self._input_to_datetime(input,adj)
-        #print('dtm=',dtm)
+    def _input_to_mstimestamp(self, input, adj=None):
+        dtm = self._input_to_datetime(input, adj)
+        # print('dtm=',dtm)
         return str(int(dtm.timestamp() * 1000))
-    
-    def _req_get_json(self,req):
+
+    def _req_get_json(self, req):
         r = requests.get(req)
         rjson = r.json()
         if 'results' not in rjson:
@@ -46,39 +48,38 @@ class _PolygonApiBase:
             elif 'error' in rjson:
                 message = rjson['error']
             else:
-                sreq = str(req)[:req.find('&apiKey=')]+'&apiKey=***'
-                message = 'No results returned for req='+sreq
-            warnings.warn('\n'+message)
+                sreq = str(req)[:req.find('&apiKey=')] + '&apiKey=***'
+                message = 'No results returned for req=' + sreq
+            warnings.warn('\n' + message)
         return rjson
-        
-    def _json_response_to_ohlcvdf(self,span,rjson,tz='US/Eastern'):
-        #print('rjson.keys()=',rjson.keys())
+
+    def _json_response_to_ohlcvdf(self, span, rjson, tz='US/Eastern'):
+        # print('rjson.keys()=',rjson.keys())
         if 'results' not in rjson:
             return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
-        
-#         for key in ['ticker', 'queryCount', 'resultsCount', 'adjusted', 'status', 'request_id', 'count']:
-#             print('rjson['+key+']=',rjson[key])
-#         print('len(rjson[results])=',len(rjson['results']))
-#         t = rjson['results'][0]['t']
-#         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
-#         print(rjson['results'][0])
-#         t = rjson['results'][-1]['t']
-#         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
-#         print(rjson['results'][-1])
-            
+
+        #         for key in ['ticker', 'queryCount', 'resultsCount', 'adjusted', 'status', 'request_id', 'count']:
+        #             print('rjson['+key+']=',rjson[key])
+        #         print('len(rjson[results])=',len(rjson['results']))
+        #         t = rjson['results'][0]['t']
+        #         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
+        #         print(rjson['results'][0])
+        #         t = rjson['results'][-1]['t']
+        #         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
+        #         print(rjson['results'][-1])
+
         tempdf = pd.DataFrame(rjson['results'])
-        
-        tempdf.index = [pd.Timestamp(t*1000000.,tz='UTC') for t in tempdf.t.values]
-        if span in ('day','week','month','quarter','year'):
+
+        tempdf.index = [pd.Timestamp(t * 1000000., tz='UTC') for t in tempdf.t.values]
+        if span in ('day', 'week', 'month', 'quarter', 'year'):
             tempdf.index = pd.DatetimeIndex([t.date() for t in tempdf.index])
-        else: # span is hour, minute or second:
+        else:  # span is hour, minute or second:
             tempdf.index = tempdf.index.tz_convert(tz=tz).tz_localize(tz=None)
 
-        tempdf.rename(columns=self._OHLCV_COLMAP,inplace=True)
+        tempdf.rename(columns=self._OHLCV_COLMAP, inplace=True)
         tempdf.index.name = rjson['ticker']
-        retdf = tempdf[ self._OHLCV_COLMAP.values() ]
+        retdf = tempdf[self._OHLCV_COLMAP.values()]
         return retdf
-
 
 ##########################################################################################
 #  Copyright 2023, Daniel Goldfarb, dgoldfarb.github@gmail.com
