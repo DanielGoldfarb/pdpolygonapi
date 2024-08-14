@@ -14,6 +14,8 @@ Some of the methods include:
                                The DataFrame is Indexed by Expiration Date, Strike, and Put/Call
    - `fetch_quotes()`        ... Returns Bid/Ask BidSize/AskSize data for a Ticker, with a Datetime Index
 
+
+
 ### [For more detailed information see the apiPolygon jupyter notebook in the examples folder](https://github.com/DanielGoldfarb/pdpolygonapi/blob/main/examples/apiPolygon.ipynb).
 
 ---
