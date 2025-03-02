@@ -41,32 +41,23 @@ class _PolygonApiBase:
 
     def _req_get_json(self, req):
         r = requests.get(req)
-        rjson = r.json()
+        return r.json()
+
+    def _json_response_to_ohlcvdf(self, span, rjson, tz='US/Eastern'):
         if 'results' not in rjson:
             if 'message' in rjson:
                 message = rjson['message']
             elif 'error' in rjson:
                 message = rjson['error']
-            else:
+            elif ('status' not in rjson or ('status' in rjson and
+                   rjson['status']!='OK' and  rjson['status']!='DELAYED')):
                 sreq = str(req)[:req.find('&apiKey=')] + '&apiKey=***'
                 message = 'No results returned for req=' + sreq
+            else:
+                return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
+
             warnings.warn('\n' + message)
-        return rjson
-
-    def _json_response_to_ohlcvdf(self, span, rjson, tz='US/Eastern'):
-        # print('rjson.keys()=',rjson.keys())
-        if 'results' not in rjson:
-            return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
-
-        #         for key in ['ticker', 'queryCount', 'resultsCount', 'adjusted', 'status', 'request_id', 'count']:
-        #             print('rjson['+key+']=',rjson[key])
-        #         print('len(rjson[results])=',len(rjson['results']))
-        #         t = rjson['results'][0]['t']
-        #         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
-        #         print(rjson['results'][0])
-        #         t = rjson['results'][-1]['t']
-        #         print(pd.Timestamp(t*1000000.,tz='UTC'),':',end='')
-        #         print(rjson['results'][-1])
+            return None
 
         tempdf = pd.DataFrame(rjson['results'])
 
