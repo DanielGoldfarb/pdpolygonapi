@@ -6,17 +6,16 @@
 # ---
 
 import datetime
+import logging
 import os
 import pathlib
 import warnings
-
 # from  multiprocess    import Lock as MultiProcessLock # prefer
 from multiprocessing import Lock as MultiProcessLock  # more common
 
 import numpy as np
 import pandas as pd
 import requests
-import logging
 
 from pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
 
