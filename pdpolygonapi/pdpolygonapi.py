@@ -270,7 +270,7 @@ class PolygonApi(_PolygonApiBase):
             rjson = self._req_get_json(req)
 
             tempdf = self._json_response_to_ohlcvdf(span, rjson, tz=tz)
-            if len(tempdf) == 0:
+            if tempdf is None or len(tempdf) == 0:
                 return tempdf
 
             # print('len(tempdf)=',len(tempdf))
