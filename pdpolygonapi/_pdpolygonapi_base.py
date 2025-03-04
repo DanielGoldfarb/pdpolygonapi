@@ -65,7 +65,7 @@ class _PolygonApiBase:
                    rjson['status']!='OK' and  rjson['status']!='DELAYED')):
                 sreq = str(req)[:req.find('&apiKey=')] + '&apiKey=***'
                 message = 'No results returned for req=' + sreq
-            else:
+            else: #  valid empty results (for example, ticker was not traded for specified datetime)
                 return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
 
             warnings.warn('\n' + message)
