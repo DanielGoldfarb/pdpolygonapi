@@ -81,13 +81,16 @@ class PolygonApi(_PolygonApiBase):
         except:
             pass
 
-    def __init__(self, envkey=None, apikey=None, loglevel=None):
+    def __init__(self, envkey=None, apikey=None, loglevel=None, wait=False):
         if apikey is not None:
             self.APIKEY = apikey
         elif envkey is not None:
             self.APIKEY = os.environ.get(envkey)
         else:
             self.APIKEY = os.environ.get('POLYGON_API')
+
+        if not isinstance(self.APIKEY, str) or len(self.APIKEY) < 10:
+            raise ValueError('APIKEY must be type str len >= 10')
 
         # create logger for 'pdpolygonapi'
         # and set loglevel if not None:
@@ -96,12 +99,15 @@ class PolygonApi(_PolygonApiBase):
             if isinstance(loglevel,str): loglevel = loglevel.upper()
             self.logger.setLevel(loglevel)
         else: # default level for 'pdpolygonapi':
-            self.logger.setLevel(logging.ERROR) 
+            self.logger.setLevel(logging.WARNING) 
 
         # make sure the root logger has a handler,
         # to avoid using logging.lastResort handler:
         if not logging.getLogger('root').hasHandlers(): # root logger
+            self.logger.info("no handlers in root logger: create basicConfig()")
             logging.basicConfig() # creates basic handler and formatter
+
+        self.wait = wait
 
     def _cache_dir(self):
         cache_dir = (pathlib.Path.home() / '.pdpolygonapi/ohlcv_cache')
@@ -265,7 +271,7 @@ class PolygonApi(_PolygonApiBase):
             rjson = self._req_get_json(req)
 
             tempdf = self._json_response_to_ohlcvdf(span, rjson, tz=tz)
-            if len(tempdf) == 0:
+            if tempdf is None or len(tempdf) == 0:
                 return tempdf
 
             # print('len(tempdf)=',len(tempdf))
@@ -361,8 +367,6 @@ class PolygonApi(_PolygonApiBase):
                         print('Found zero byte cache file:' + cf)
                         raise RuntimeError('Found zero byte cache file:' + cf)
                     if year == ts_now.year:
-                        #import pdb
-                        #pdb.set_trace()
                         mtime = pd.Timestamp.fromtimestamp(stat_result.st_mtime)
                         start_trade_date = ts_now.replace(hour=9,minute=30,second=0,microsecond=0,nanosecond=0)
                         print('TDB: year=',year)
@@ -427,8 +431,6 @@ class PolygonApi(_PolygonApiBase):
                 self.logger.debug(f'type(start_dtm)={type(start_dtm)}')
                 self.logger.debug(f'type(end_dtm)={type(end_dtm)}')
                 self.logger.debug(f'start_dtm:end_dtm={start_dtm}:{end_dtm}')
-                # import pdb
-                # pdb.set_trace()
                 tempdf = tempdf.loc[start_dtm:end_dtm]
         else:
             tempdf = request_data()

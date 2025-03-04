@@ -7,10 +7,11 @@
 # ---
 
 import datetime
+import requests
+import time
 import warnings
 
 import pandas as pd
-import requests
 
 
 class _PolygonApiBase:
@@ -40,8 +41,19 @@ class _PolygonApiBase:
         return str(int(dtm.timestamp() * 1000))
 
     def _req_get_json(self, req):
-        r = requests.get(req)
-        return r.json()
+        have_response = False
+        while not have_response:
+            r = requests.get(req)
+            rjson = r.json()
+            if (self.wait and 'results' not in rjson and 'error' in rjson
+                and 'exceeded' in rjson['error'] and 'upgrade' in rjson['error']):
+                #  'error': "You've exceeded the maximum requests per minute, please wait
+                #  or upgrade your subscription to continue. https://polygon.io/pricing"
+                self.logger.warn('Max requests per minute exceeded; waiting to try again.')
+                time.sleep(12)
+            else:
+                have_response = True
+        return rjson
 
     def _json_response_to_ohlcvdf(self, span, rjson, tz='US/Eastern'):
         if 'results' not in rjson:
@@ -53,7 +65,7 @@ class _PolygonApiBase:
                    rjson['status']!='OK' and  rjson['status']!='DELAYED')):
                 sreq = str(req)[:req.find('&apiKey=')] + '&apiKey=***'
                 message = 'No results returned for req=' + sreq
-            else:
+            else: #  valid empty results (for example, ticker was not traded for specified datetime)
                 return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
 
             warnings.warn('\n' + message)
