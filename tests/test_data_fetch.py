@@ -15,7 +15,7 @@ from pdpolygonapi import PolygonApi
 logger = logging.getLogger(__name__)
 
 print('0:__name__=',__name__)
-#logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 #root_logger = logging.getLogger()
 #for handler in root_logger.handlers:
@@ -30,11 +30,10 @@ def api():
     # os.environ.setdefault("POLYGON_API", polygon_api_key)
 
     api_env_key = "POLYGON_API"
-    api = PolygonApi(envkey=api_env_key, loglevel='INFO', wait=True)
+    api = PolygonApi(envkey=api_env_key, loglevel='DEBUG', wait=True)
     if api.APIKEY is None or api.APIKEY == "":
         logger.error(f"Polygon API key is not set in the environment variable [{api_env_key}]")
     assert api.APIKEY is not None and api.APIKEY != ""
-
     return api
 
 

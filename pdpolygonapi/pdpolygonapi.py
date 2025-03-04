@@ -104,6 +104,7 @@ class PolygonApi(_PolygonApiBase):
         # make sure the root logger has a handler,
         # to avoid using logging.lastResort handler:
         if not logging.getLogger('root').hasHandlers(): # root logger
+            self.logger.info("no handlers in root logger: create basicConfig()")
             logging.basicConfig() # creates basic handler and formatter
 
         self.wait = wait
