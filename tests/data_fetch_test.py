@@ -30,7 +30,7 @@ def api():
     # os.environ.setdefault("POLYGON_API", polygon_api_key)
 
     api_env_key = "POLYGON_API"
-    api = PolygonApi(envkey=api_env_key, loglevel='INFO')
+    api = PolygonApi(envkey=api_env_key, loglevel='INFO', wait=True)
     if api.APIKEY is None or api.APIKEY == "":
         logger.error(f"Polygon API key is not set in the environment variable [{api_env_key}]")
     assert api.APIKEY is not None and api.APIKEY != ""

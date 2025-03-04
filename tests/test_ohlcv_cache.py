@@ -2,7 +2,7 @@ import timeit
 
 from pdpolygonapi import PolygonApi
 
-polygon = PolygonApi(envkey='POLYGON_API')
+polygon = PolygonApi(envkey='POLYGON_API', wait=True)
 
 spy = polygon.fetch_ohlcvdf('SPY', start='2023-05-19', end='2023-07-20',
                             span='day', show_request=True, cache=False)
@@ -29,26 +29,27 @@ def onerun(span, span_multiplier, cache):
             # print(ticker,start,end,' len(df)=',len(df))
 
 
-print()
-print('span=day,span_multiplier=1')
-t_nocache = timeit.timeit(lambda: onerun('day', 1, False), number=1)
-t_cache = timeit.timeit(lambda: onerun('day', 1, True), number=1)
-print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
-
-print()
-print('span=hour,span_multiplier=1')
-t_nocache = timeit.timeit(lambda: onerun('hour', 1, False), number=1)
-t_cache = timeit.timeit(lambda: onerun('hour', 1, True), number=1)
-print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
-
-print()
-print('span=minute,span_multiplier=15')
-t_nocache = timeit.timeit(lambda: onerun('minute', 15, False), number=1)
-t_cache = timeit.timeit(lambda: onerun('minute', 15, True), number=1)
-print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
-
-print()
-print('span=day,span_multiplier=1')
-t_nocache = timeit.timeit(lambda: onerun('day', 1, False), number=1)
-t_cache = timeit.timeit(lambda: onerun('day', 1, True), number=1)
-print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
+def test_cache_time_vs_no_cache():
+    print()
+    print('span=day,span_multiplier=1')
+    t_nocache = timeit.timeit(lambda: onerun('day', 1, False), number=1)
+    t_cache = timeit.timeit(lambda: onerun('day', 1, True), number=1)
+    print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
+    
+    print()
+    print('span=hour,span_multiplier=1')
+    t_nocache = timeit.timeit(lambda: onerun('hour', 1, False), number=1)
+    t_cache = timeit.timeit(lambda: onerun('hour', 1, True), number=1)
+    print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
+    
+    print()
+    print('span=minute,span_multiplier=15')
+    t_nocache = timeit.timeit(lambda: onerun('minute', 15, False), number=1)
+    t_cache = timeit.timeit(lambda: onerun('minute', 15, True), number=1)
+    print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
+    
+    print()
+    print('span=day,span_multiplier=1')
+    t_nocache = timeit.timeit(lambda: onerun('day', 1, False), number=1)
+    t_cache = timeit.timeit(lambda: onerun('day', 1, True), number=1)
+    print(f'nocache={t_nocache:5.2f} cache={t_cache:5.2f}  nocache/cache={(t_nocache / t_cache):5.2f}')
