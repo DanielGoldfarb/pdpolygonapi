@@ -10,6 +10,7 @@ import logging
 import os
 import pathlib
 import warnings
+
 # from  multiprocess    import Lock as MultiProcessLock # prefer
 from multiprocessing import Lock as MultiProcessLock  # more common
 
@@ -81,7 +82,37 @@ class PolygonApi(_PolygonApiBase):
         except:
             pass
 
-    def __init__(self, envkey=None, apikey=None, loglevel=None, wait=False):
+    def __init__(
+        self,
+        envkey: str | None = "POLYGON_API",
+        apikey: str | None = None,
+        loglevel: int | str = logging.WARNING,
+        wait: bool = True,
+        cache: bool = False,
+    ) -> None:
+        """
+        Class to provide interface methods to access the Polygon.io REST api.
+        These methods typically return Pandas objects (DataFrames and Series)
+        or return structures (classes) containing various Pandas objects.
+
+        Args:
+            envkey:   If set, this is the name of the environment variable
+                      that contains your Polygon.io API key.
+                      Default value is "POLYGON_API"
+
+            apikey:   If set, this is your Polygon.io API key.
+                      NOTE WELL: `apikey` overrides `envkey`.
+
+            loglevel: Loglevel to be used for logger "pdpolygonapi"
+
+            wait:     If Polygon allowed requests-per-minute exceeded, then wait and re-try.
+
+            cache:    default value for cache, to be used when not specified within the
+                      arguments of individual methods.
+
+        Returns:
+            An instance of the PolygonApi class
+        """
         if apikey is not None:
             self.APIKEY = apikey
         elif envkey is not None:
@@ -92,15 +123,15 @@ class PolygonApi(_PolygonApiBase):
         if not isinstance(self.APIKEY, str) or len(self.APIKEY) < 10:
             raise ValueError("APIKEY must be type str len >= 10")
 
-        # create logger for 'pdpolygonapi'
-        # and set loglevel if not None:
+        # create 'pdpolygonapi' logger, and set loglevel:
         self.logger = logging.getLogger("pdpolygonapi")
-        if loglevel is not None:
+        if isinstance(loglevel, (str, int)):
             if isinstance(loglevel, str):
                 loglevel = loglevel.upper()
             self.logger.setLevel(loglevel)
         else:  # default level for 'pdpolygonapi':
             self.logger.setLevel(logging.WARNING)
+            self.logger.info("Unrecognized type for `loglevel`; default to `logging.WARNING`")
 
         # make sure the root logger has a handler,
         # to avoid using logging.lastResort handler:
@@ -109,6 +140,7 @@ class PolygonApi(_PolygonApiBase):
             logging.basicConfig()  # creates basic handler and formatter
 
         self.wait = wait
+        self.cache_initializer = cache
 
     def _cache_dir(self):
         cache_dir = pathlib.Path.home() / ".pdpolygonapi/ohlcv_cache"
@@ -150,7 +182,7 @@ class PolygonApi(_PolygonApiBase):
         end=0,
         span="day",
         market="regular",
-        cache=False,
+        cache=None,
         span_multiplier=1,
         resample=True,
         tz="US/Eastern",
@@ -215,8 +247,8 @@ class PolygonApi(_PolygonApiBase):
         `span` and `span_multiplier`
 
         """
-        #        def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
-        #                          span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
+        #  def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
+        #                    span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
         self.logger.debug(f"fetch_ohlcvdf: ticker={ticker}, start={start}, end={end}")
         self.logger.debug(f"fetch_ohlcvdf: span={span}, span_multiplier={span_multiplier}")
         self.logger.debug(f"fetch_ohlcvdf: market={market}, cache={cache}")
@@ -231,6 +263,9 @@ class PolygonApi(_PolygonApiBase):
         valid_spans = ("second", "minute", "hour", "day", "week", "month", "quarter", "year")
         if span not in valid_spans:
             raise ValueError("span must be one of " + str(valid_spans))
+
+        if not isinstance(cache, bool):
+            cache = self.cache_initializer
 
         if span == "second" and cache:
             cache = False

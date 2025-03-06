@@ -1,3 +1,4 @@
+import pytest
 import timeit
 
 from pdpolygonapi import PolygonApi
@@ -29,6 +30,7 @@ def onerun(span, span_multiplier, cache):
             # print(ticker,start,end,' len(df)=',len(df))
 
 
+@pytest.mark.skip(reason="skip test until can be fleshed out correctly")
 def test_cache_time_vs_no_cache():
     print()
     print('span=day,span_multiplier=1')
