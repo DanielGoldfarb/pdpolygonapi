@@ -7,9 +7,7 @@ import logging
 import pytest
 import pandas as pd
 
-print(f" Using logger({__name__})")
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger("test_pdpgapi")
 
 ticker_param_data = [
     # ["ticker", "start", "end", "span", "span_multiplier"],
@@ -22,21 +20,18 @@ ticker_param_data = [
 @pytest.mark.parametrize("ticker, start, end, span, span_multiplier", ticker_param_data)
 def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multiplier):
 
+    
     df = pdpgapi.fetch_ohlcvdf(ticker, start=start, end=end, span=span, span_multiplier=span_multiplier)
 
     ref_name = ""
     # logger.info(f"(ticker, start, end, span, span_multiplier)={(ticker, start, end, span, span_multiplier)}")
     if isinstance(df, pd.DataFrame):
-        logger.info(f"len(df)={len(df)}")
-        # if len(df) > 20:
-        #     logger.info(f"df=\n{df.iloc[[0,-1]]}")
-        # else:
-        #     logger.info(f"df=\n{df}")
-        # SPY_231001_250301_day_1.csv
         sd = start[2:].replace("-","")
         ed = end[2:].replace("-","")
         ref_name = f"reference_data/{ticker}_{sd}_{ed}_{span}_{span_multiplier}.csv"
-        if regolden:
+        logger.info(f"len(df)={len(df)}  regolden = {regolden}")
+        logger.info(f"{ref_name}")
+        if "all" in regolden or ref_name in regolden:
             df.to_csv(ref_name)
             message = f"NOT TESTING: REGENERATING 'golden' reference file: '{ref_name}'"
             pytest.fail(message)
@@ -44,5 +39,10 @@ def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multipli
             rdf = pd.read_csv(ref_name, index_col=ticker, parse_dates=True)
             # logger.info(f"rdf=\n{rdf.iloc[[0,-1]]}")
             # https://saturncloud.io/blog/how-to-confirm-equality-of-two-pandas-dataframes
-            pd.testing.assert_frame_equal(df, rdf)
+            try:
+                pd.testing.assert_frame_equal(df, rdf)
+            except:
+                logger.error(f"Data Failed to match reference: {ref_name}")
+                raise
+                
 

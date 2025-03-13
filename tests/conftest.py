@@ -2,22 +2,24 @@ import logging
 import pytest
 from pdpolygonapi import PolygonApi
 
-print(f" Using logger({__name__})")
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("test_pdpgapi")
 logger.setLevel(logging.DEBUG)
-
-DATE_FORMAT = "%Y-%m-%d"
 
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--re-golden", action="store_true", help='Regenerate reference data files ("golden" copy).'
+        "--re-golden",
+        action="store",
+        default=None,
+        help='Regenerate reference data: filename, list of filenames, or "all"',
     )
 
 
 @pytest.fixture
 def regolden(request):
-    return request.config.getoption("--re-golden")
+    r = request.config.getoption("--re-golden")
+    r = [s.strip() for s in r.split(",")] if r is not None else [None]
+    return r
 
 
 @pytest.fixture
