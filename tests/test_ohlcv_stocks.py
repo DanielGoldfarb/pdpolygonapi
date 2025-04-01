@@ -15,12 +15,14 @@ ticker_param_data = [
     ("SPY", "2023-10-01", "2025-03-01", "week", 1),
     ("SPY", "2023-10-01", "2025-03-01", "month", 1),
     ("SPY", "2023-10-01", "2025-03-01", "quarter", 1),
+    ("SPY", "2025-01-01", "2025-03-01", "minute", 1),
+    ("SPY", "2025-01-01", "2025-03-01", "hour", 1),
+    ("SPY", "2025-01-01", "2025-03-01", "minute", 30),
 ]
 
 @pytest.mark.parametrize("ticker, start, end, span, span_multiplier", ticker_param_data)
 def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multiplier):
 
-    
     df = pdpgapi.fetch_ohlcvdf(ticker, start=start, end=end, span=span, span_multiplier=span_multiplier)
 
     ref_name = ""
@@ -44,5 +46,4 @@ def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multipli
             except:
                 logger.error(f"Data Failed to match reference: {ref_name}")
                 raise
-                
 

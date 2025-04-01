@@ -332,7 +332,11 @@ class PolygonApi(_PolygonApiBase):
                     t2 = pd.Timestamp(d, tz="US/Eastern") + pd.Timedelta(hours=16)
                     t2 = t2.tz_convert(tz).tz_localize(tz=None)
                     # print(t1,t2,'\n',tempdf.loc[t1:t2].head(),'\n')
-                    mktdf = pd.concat([mktdf, tempdf.loc[t1:t2]])
+                    # self.logger.info(f'len(mktdf)={len(mktdf)}  mktdf:\n{mktdf.head(3)}{mktdf.tail(3)}\n\n')
+                    if len(mktdf) < 1:
+                        mktdf = pd.concat([tempdf.loc[t1:t2]])
+                    else:
+                        mktdf = pd.concat([mktdf, tempdf.loc[t1:t2]])
                     # print('len(mktdf)=',len(mktdf),'mktdf:\n',mktdf.head(3),mktdf.tail(3),'\n\n')
                 tempdf = mktdf
             return tempdf
@@ -544,7 +548,7 @@ class PolygonApi(_PolygonApiBase):
             smult = str(span_multiplier)
             sdict = dict(
                 second="S",
-                minute="T",
+                minute="min",
                 hour="H",
                 day="D",
                 week="W",
