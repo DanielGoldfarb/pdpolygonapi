@@ -42,7 +42,10 @@ def test_api_init_03():
     existing_key = os.environ.get(api_key_env_var)
     os.environ[api_key_env_var] = api_key
     api = PolygonApi()
-    os.environ[api_key_env_var] = existing_key
+    if existing_key:
+        os.environ[api_key_env_var] = existing_key
+    else:
+        os.environ.pop(api_key_env_var, None)
     assert api.APIKEY == api_key
 
 
