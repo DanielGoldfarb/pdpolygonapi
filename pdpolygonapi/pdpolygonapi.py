@@ -286,8 +286,18 @@ class PolygonApi(_PolygonApiBase):
             )
             span_multiplier = 1
 
+        # --------------------------------------------
+        # Note that polygon.io REST api accepts dates
+        # in YYYY-MM-DD format, but NOT with HH:MM:SS
+        # To specify hours, minutes, and seconds, the
+        # dates/times must be converted to millisecond
+        # unix timestamps:
+
         end_msts = self._input_to_mstimestamp(end, "end")
         start_msts = self._input_to_mstimestamp(start, 0)
+
+        # print(f"  end=\"{end}\"      end_msts={end_msts}")
+        # print(f"start=\"{start}\"  start_msts={start_msts}")
 
         s_spanmult = "1" if resample else str(span_multiplier)
 
