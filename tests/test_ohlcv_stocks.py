@@ -1,7 +1,5 @@
 """
--- Created by: Ashok Kumar Pant
--- Email: asokpant@gmail.com
--- Created on: 14/08/2024
+Test pdpolgonapi.fetch_ohlcvdf() for stocks.
 """
 import logging
 import pytest

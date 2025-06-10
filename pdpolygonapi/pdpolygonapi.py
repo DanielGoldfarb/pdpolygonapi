@@ -458,20 +458,23 @@ class PolygonApi(_PolygonApiBase):
                         print("Found zero byte cache file:" + cf)
                         raise RuntimeError("Found zero byte cache file:" + cf)
                     if year == ts_now.year:
+                        # The current year's cache file should be replaced
+                        # (or appended to) each new trading day.  Should 
+                        # review this code and write a pytest for it as well.
                         mtime = pd.Timestamp.fromtimestamp(stat_result.st_mtime)
                         start_trade_date = ts_now.replace(
                             hour=9, minute=30, second=0, microsecond=0, nanosecond=0
                         )
-                        print("TDB: year=", year)
-                        print("TDB: ts_now=", ts_now)
-                        print("TDB: start_trade_date=", start_trade_date)
-                        print("TDB: mtime=", mtime)
+                        # print("TDB: year=", year)
+                        # print("TDB: ts_now=", ts_now)
+                        # print("TDB: start_trade_date=", start_trade_date)
+                        # print("TDB: mtime=", mtime)
                         if ts_now > start_trade_date:
                             current_trade_date = ts_now.date()
                         else:
                             current_trade_date = (ts_now - pd.tseries.offsets.BDay(1)).date()
-                        print("TDB: mtime.date()=", mtime.date())
-                        print("TDB: current_trade_date=", current_trade_date)
+                        # print("TDB: mtime.date()=", mtime.date())
+                        # print("TDB: current_trade_date=", current_trade_date)
                         if mtime.date() < current_trade_date:
                             print(
                                 "Current Trade Date=",
@@ -554,6 +557,7 @@ class PolygonApi(_PolygonApiBase):
         # that issue, we now cache based on requested span and span_multiplier
         # and do not resample cached data.
 
+        # TODO: Remove resampling.  Resampling should only be done by callers.
         if must_resample:
             smult = str(span_multiplier)
             sdict = dict(
