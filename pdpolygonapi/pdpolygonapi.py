@@ -139,6 +139,8 @@ class PolygonApi(_PolygonApiBase):
             self.logger.info("no handlers in root logger: create basicConfig()")
             logging.basicConfig()  # creates basic handler and formatter
 
+        self.current_log_level = self.logger.getEffectiveLevel()
+
         self.wait = wait
         self.cache_initializer = cache
 
@@ -249,11 +251,21 @@ class PolygonApi(_PolygonApiBase):
         """
         #  def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
         #                    span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
-        self.logger.debug(f"fetch_ohlcvdf: ticker={ticker}, start={start}, end={end}")
-        self.logger.debug(f"fetch_ohlcvdf: span={span}, span_multiplier={span_multiplier}")
-        self.logger.debug(f"fetch_ohlcvdf: market={market}, cache={cache}")
+
+        #  -------------------------------
+        #  USE LAZY FORMATING FOR LOGGING:
+        #  -------------------------------
+        #   In [24]: logging.error("ticker=%s, date=%s, i=%s, x=%s" % (t,pydt,i,x))
+        #   ERROR:root:ticker=SPY, date=2025-06-09 22:12:44.237548, i=12345, x=1.2345
+        #   
+        #   In [25]: logging.error("ticker=%s, date=%s, i=%s, x=%s",t,pydt,i,x)
+        #   ERROR:root:ticker=SPY, date=2025-06-09 22:12:44.237548, i=12345, x=1.2345
+
+        self.logger.debug("fetch_ohlcvdf: ticker=%s, start=%s, end=%s",ticker,start,end)
+        self.logger.debug("fetch_ohlcvdf: span=%s, span_multiplier=%s",span,span_multiplier)
+        self.logger.debug("fetch_ohlcvdf: market=%s, cache=%s",market,cache)
         self.logger.debug(
-            f"fetch_ohlcvdf: resample={resample}, tz={tz}, show_request={show_request}"
+            "fetch_ohlcvdf: resample=%s, tz=%s, show_request=%s",resample,tz,show_request
         )
 
         valid_markets = ("regular", "all")
@@ -459,7 +471,7 @@ class PolygonApi(_PolygonApiBase):
                         raise RuntimeError("Found zero byte cache file:" + cf)
                     if year == ts_now.year:
                         # The current year's cache file should be replaced
-                        # (or appended to) each new trading day.  Should 
+                        # (or appended to) each new trading day.  Should
                         # review this code and write a pytest for it as well.
                         mtime = pd.Timestamp.fromtimestamp(stat_result.st_mtime)
                         start_trade_date = ts_now.replace(
@@ -495,7 +507,10 @@ class PolygonApi(_PolygonApiBase):
                         if end_dtm > dtm1:
                             self.logger.warning(f"cache ({cf}) too short ... requesting more data.")
                             raise RuntimeError(f"cache ({cf}) too short ... requesting more data.")
+                    self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
+                    self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
                     tempdf = pd.concat([tempdf, nextdf])
+                    self.logger.info("NOW: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
