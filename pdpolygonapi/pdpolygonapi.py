@@ -186,7 +186,6 @@ class PolygonApi(_PolygonApiBase):
         market="regular",
         cache=None,
         span_multiplier=1,
-        resample=True,
         tz="US/Eastern",
         show_request=False,
     ):
@@ -228,18 +227,16 @@ class PolygonApi(_PolygonApiBase):
                        `Path.home()/.pdpolygonapi/ohlcv_cache/` keyed by
                        ticker symbol, span, span_multiplier, and year.
 
-        span_multiplier (int): SEE ALSO `resample`.  If span_multiplier > 1 then
-                        the time between adjacent data points is (span * span_multipler).
-                        If `resample`, then span_multipler is implemented by resampling
-                        the data frame after fetching data from Polygon.io
-                        If `not resample`, then span_multiplier is passed to Polygon.io
-                        NOTE: when span_multiplier is passed to Polygon.io then
+        span_multiplier (int): If span_multiplier > 1 then the time between adjacent
+                        data points is (span * span_multipler).  The span_multiplier
+                        is passed to Polygon.io
+                        NOTE: When span_multiplier is passed to Polygon.io then
                               it is possible to have some time periods missing data,
                               whereas when span multiplication is done via resampling
-                              then empty time periods will be *back* filled.
-
-        resample (bool): If True, then use resampling to implement span_multiplier.
-                         If False, pass span_multiplier to polygon REST API.
+                              then empty time periods can be *back* filled, or foward
+                              filled.  As of June 2025 resampling was removed from
+                              this interface; users wanting resampled data should do
+                              resampling on their own after calling this api.
 
         tz (str)     :  Time Zone for data returned.  Default is 'US/Eastern'
 
@@ -250,7 +247,7 @@ class PolygonApi(_PolygonApiBase):
 
         """
         #  def fetch_ohlcvdf(self,ticker,start=-30,end=0,span='day',market='regular',cache=False,
-        #                    span_multiplier=1,resample=True,tz='US/Eastern',show_request=False):
+        #                    span_multiplier=1,tz='US/Eastern',show_request=False):
 
         #  -------------------------------
         #  USE LAZY FORMATING FOR LOGGING:
@@ -264,9 +261,7 @@ class PolygonApi(_PolygonApiBase):
         self.logger.debug("fetch_ohlcvdf: ticker=%s, start=%s, end=%s",ticker,start,end)
         self.logger.debug("fetch_ohlcvdf: span=%s, span_multiplier=%s",span,span_multiplier)
         self.logger.debug("fetch_ohlcvdf: market=%s, cache=%s",market,cache)
-        self.logger.debug(
-            "fetch_ohlcvdf: resample=%s, tz=%s, show_request=%s",resample,tz,show_request
-        )
+        self.logger.debug("fetch_ohlcvdf: tz=%s, show_request=%s",tz,show_request)
 
         valid_markets = ("regular", "all")
         if market not in valid_markets:
@@ -310,8 +305,6 @@ class PolygonApi(_PolygonApiBase):
 
         # print(f"  end=\"{end}\"      end_msts={end_msts}")
         # print(f"start=\"{start}\"  start_msts={start_msts}")
-
-        s_spanmult = "1" if resample else str(span_multiplier)
 
         req = (
             "https://api.polygon.io/v2/aggs/ticker/"
@@ -415,10 +408,13 @@ class PolygonApi(_PolygonApiBase):
                 cache_end = datetime.datetime(year, 12, 31)
                 cache_start = datetime.datetime(year, 1, 1)
             else:
+                raise ValueError("request_data_to_cache() should always have YEAR")
                 cache_end = today
                 cache_start = datetime.datetime(today.year, 1, 1)
-            cache_start = cache_start.replace(hour=0, minute=0, second=0, microsecond=0)
-            cache_end = cache_end.replace(hour=23, minute=59, second=59, microsecond=999999)
+            cache_start = cache_start.replace(hour=9, minute=30, second=0, microsecond=0)
+            cache_end = cache_end.replace(hour=16, minute=00, second=00, microsecond=0)
+            #cache_start = cache_start.replace(hour=0, minute=0, second=0, microsecond=1)
+            #cache_end = cache_end.replace(hour=23, minute=59, second=59, microsecond=999999)
             self.logger.debug(f"cache_start={cache_start}, cache_end={cache_end}")
             tempdf = self.fetch_ohlcvdf(
                 ticker,
@@ -426,7 +422,6 @@ class PolygonApi(_PolygonApiBase):
                 end=cache_end,
                 span=span,
                 span_multiplier=span_multiplier,
-                resample=False,
                 show_request=True,
                 cache=False,
             )
@@ -458,11 +453,14 @@ class PolygonApi(_PolygonApiBase):
                 if cf in PolygonApi.cached_files:
                     # We have already, at least once in this instance, encountered
                     # this cache file; therefore this `read_csv()` should work ok:
+                    # (no need to get lock on cache file).
                     tempdf = pd.concat([tempdf, pd.read_csv(cf, index_col=0, parse_dates=True)])
                     self.logger.debug(f"jj={jj} read-in cache file:{cf}")
                     self.logger.debug(_str_df(f"jj={jj} tempdf(0)", tempdf))
                     continue
                 try:
+                    # We haven't seen the file yet during this run (instance) but the cache
+                    # file _may_ exist from a previous run, so look for it (with a lock):
                     PolygonApi.cflock_acquire()
                     stat_result = pathlib.Path(cf).stat()
                     size = stat_result.st_size
@@ -509,8 +507,9 @@ class PolygonApi(_PolygonApiBase):
                             raise RuntimeError(f"cache ({cf}) too short ... requesting more data.")
                     self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
                     self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
+                    tlen = len(tempdf)
                     tempdf = pd.concat([tempdf, nextdf])
-                    self.logger.info("NOW: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
+                    self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
@@ -561,41 +560,7 @@ class PolygonApi(_PolygonApiBase):
         else:
             tempdf = request_data()
 
-        must_resample = span_multiplier > 1 and resample and len(tempdf) > 1
-        # print('span_multiplier,resample,cache,span,must_resample=',
-        #       span_multiplier,resample,cache,span,must_resample)
-
-        # In a previous version, the cached data was always 5 minute data,
-        # and we used resampling to obtain requests for differen spans and/or
-        # span_multipliers.  However that resampling resulted in data for
-        # non-trading days; rather than deal somehow perhaps kludgy with
-        # that issue, we now cache based on requested span and span_multiplier
-        # and do not resample cached data.
-
-        # TODO: Remove resampling.  Resampling should only be done by callers.
-        if must_resample:
-            smult = str(span_multiplier)
-            sdict = dict(
-                second="S",
-                minute="min",
-                hour="H",
-                day="D",
-                week="W",
-                month="M",
-                quarter="Q",
-                year="A",
-            )
-            freq = smult + sdict[span]
-            if span == "day" and span_multiplier == 7:
-                freq = "1W"
-            # print('freq=',freq)
-            ntdf = tempdf.resample(freq).agg(
-                {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
-            )
-            # resampling gets rid of regular market,
-            # so filter for regular market again:
-            tempdf = regular_market(ntdf.bfill())
-
+        print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
         return tempdf
 
     class OptionsChain:
