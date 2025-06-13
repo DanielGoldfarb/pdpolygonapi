@@ -310,7 +310,7 @@ class PolygonApi(_PolygonApiBase):
             "https://api.polygon.io/v2/aggs/ticker/"
             + ticker
             + "/range/"
-            + s_spanmult
+            + str(span_multiplier)
             + "/"
             + span
             + "/"
@@ -425,6 +425,58 @@ class PolygonApi(_PolygonApiBase):
                 show_request=True,
                 cache=False,
             )
+            # When requesting aggregate ohlcv data from polygon.io, if the start timestamp
+            # or end timestamp is in the middle of an aggregate, then that entire aggregate
+            # will be included in the response.  The causes the following affects:
+
+            # (1) If the *start* timestamp is within an aggregate then, since the entire
+            # aggregate is included in the response, and since the timestamp returned for
+            # an aggregate is always the Open time of the aggregate, then it is possible
+            # that the first aggregate returned will have a timestamp *earlier* than the start
+            # time we requested.  Since we are caching by year, this may result in the first
+            # row being from the previous year.  For the cache, we will filter this out.
+
+            # (2) If the *end* timestamp is within an aggregate then, since the entire aggregate
+            # is included, and since the timestamp returned for an aggregate is always the Open
+            # time of the aggregate, then (even though the timestamp of the last aggregate will
+            # be at or earlier than the requested end time) it's possible that the last aggregate
+            # will contain data *beyond* then end time requested.  While this may result in some
+            # of the data being in the following year, (particularly the Close, but possibly also
+            # the High or Low) we are not going  to worry about it because the timestamp of the
+            # aggregate will be in this year, and as long as we filter out the first aggregate,
+            # then we will be consistent by keeping the last aggregate, even if some of its data
+            # is in the following year and/or beyond the requested end timestamp.
+
+            # (3) Note also that, depending on the size of the aggregate, if the requested end 
+            # time is close to the present or in the future, it is possible that the last aggregate
+            # returned from polygon.io *will not be complete* since in order to be complete it
+            # would have to contain data from the future. 
+
+            # Example:
+            #  Request *weekly* data from 2021-01-01 till 2021-06-30:
+            #  Weekly aggregates go from Sunday 00:00:00 thru Saturday 23:59:99.
+
+            #  The requested start time, 2021-01-01, is a Friday, so
+            #  The first aggregate will have a timestamp of 2020-12-27 and will contain data
+            #  through 2020-12-31 (since there is no trading on 2021-01-01 nor 2021-01-02)
+
+            #  The requested end time, 2021-06-30, is a Wednesday, so:
+            #  The last aggregate will have a timestamp of 2021-05-30 and will contain data
+            #  through 2021-06-05 (or if no trading on Saturday, then through 2021-06-04).
+
+            #  Note that if the above request (*weekly* data from 2021-01-01 to 2021-06-30)
+            #  were made when the actual true live datetime was 2021-06-29 12:00 then the
+            #  last aggregate returned would be incomplete: although it is a "weekly" aggregate
+            #  it would contain data only through the present time (2021-06-29 12:00) or somewhat
+            #  less if one is enrolled for delayed prices.  Thus the final "weekly"
+            #  aggregate would effectively be Open at 2021-06-27 and Close at 2021-06-29.
+
+            # print("type(tempdf.index[0].date()), tempdf.index[0].date()=",
+            #       type( tempdf.index[0].date()), tempdf.index[0].date())
+            # print("type(cache_start.date()), cache_start.date()=",
+            #        type(cache_start.date()), cache_start.date())
+            # ix_start = 1 if tempdf.index[0].date() < cache_start.date() else 0
+            # return tempdf.iloc[ix_start:]
             return tempdf
 
         def _str_df(prefix, df):
@@ -505,11 +557,11 @@ class PolygonApi(_PolygonApiBase):
                         if end_dtm > dtm1:
                             self.logger.warning(f"cache ({cf}) too short ... requesting more data.")
                             raise RuntimeError(f"cache ({cf}) too short ... requesting more data.")
-                    self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
-                    self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
+                    #self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
+                    #self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
                     tlen = len(tempdf)
                     tempdf = pd.concat([tempdf, nextdf])
-                    self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
+                    #self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
@@ -560,8 +612,12 @@ class PolygonApi(_PolygonApiBase):
         else:
             tempdf = request_data()
 
-        print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
-        return tempdf
+        #print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
+
+        start_date = self._input_to_datetime(start).date()
+        first_date = tempdf.index[0].date()
+        ix_start = 1 if first_date < start_date else 0
+        return tempdf.iloc[ix_start:]
 
     class OptionsChain:
         """
