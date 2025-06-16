@@ -65,3 +65,23 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
     # df_diff = df_noc.compare(df_yec)
     # print("df_diff=\n",df_diff)
     pd.testing.assert_frame_equal(df_noc, df_yec)
+
+def test_clear_ohlcv_cache(pdpgapi):
+
+    # Clear the cache:
+    pdpgapi.clear_ohlcv_cache("all")
+
+    # Generate some cache files by actually requesting data:
+    tickers = ["ZS", "ZBRA", "TSLA", "EA"]
+    for ticker in tickers:
+        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="week",
+                               span_multiplier=1, show_request=False, cache=True)
+        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="month",
+                               span_multiplier=1, show_request=False, cache=True)
+
+    cleared = pdpgapi.clear_ohlcv_cache("EA")
+    assert len(cleared) == 2
+
+    cleared = pdpgapi.clear_ohlcv_cache("all")
+    assert len(cleared) == 6
+

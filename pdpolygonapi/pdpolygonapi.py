@@ -167,15 +167,16 @@ class PolygonApi(_PolygonApiBase):
             )
 
     def clear_ohlcv_cache(self, ticker):
-        if ticker == "all":
-            p = self._cache_dir()
-            for child in p.iterdir():
+        cleared = []
+        p = self._cache_dir()
+        for child in p.iterdir():
+            if (ticker == "all" or
+                ((tlen := len(ticker)+1) > 1 and ticker+"." == child.name[0:tlen])
+               ):
                 print("==> rm", child)
                 child.unlink()
-        else:
-            p = self._cache_file(ticker)
-            print("--> rm", p)
-            p.unlink(missing_ok=True)
+                cleared.append(child.name)
+        return cleared
 
     def fetch_ohlcvdf(
         self,
