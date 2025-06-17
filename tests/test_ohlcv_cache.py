@@ -8,9 +8,29 @@ import pandas as pd
 
 logger = logging.getLogger("test_pdpgapi")
 
+def test_clear_ohlcv_cache(pdpgapi):
+
+    # Clear the cache:
+    pdpgapi.clear_ohlcv_cache("all")
+
+    # Generate some cache files by actually requesting data:
+    tickers = ["ZS", "ZBRA", "TSLA", "EA"]
+    for ticker in tickers:
+        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="week",
+                               span_multiplier=1, show_request=False, cache=True)
+        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="month",
+                               span_multiplier=1, show_request=False, cache=True)
+
+    cleared = pdpgapi.clear_ohlcv_cache("EA")
+    assert len(cleared) == 2
+
+    cleared = pdpgapi.clear_ohlcv_cache("all")
+    assert len(cleared) == 6
+
+
 ticker_param_data = [
     # ["ticker", "start", "end", "span", "span_multiplier"],
-#   ("SPY", "2023-05-01", "2025-05-01", "day", 1),
+    ("SPY", "2023-05-01", "2025-05-01", "day", 1),
     ("SPY", "2023-05-01", "2025-05-01", "week", 1),
 #   ("SPY", "2023-05-01", "2025-05-01", "week", 2),
 #   ("SPY", "2023-05-01", "2025-05-01", "month", 1),
@@ -47,6 +67,8 @@ def call_yes_cache(api, number, ticker, start, end, span, span_multiplier):
 @pytest.mark.parametrize("ticker, start, end, span, span_multiplier", ticker_param_data)
 def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplier):
 
+    pdpgapi.clear_ohlcv_cache("all")
+
     t0, t1, df_noc = call_no_cache(pdpgapi, LOOP, ticker, start, end, span, span_multiplier)
     elapsed_no = t1 - t0
     logger.debug(f"NO  cache: t0, t1, elapsed = {t0}, {t1}, {t1-t0}")
@@ -66,22 +88,4 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
     # print("df_diff=\n",df_diff)
     pd.testing.assert_frame_equal(df_noc, df_yec)
 
-def test_clear_ohlcv_cache(pdpgapi):
-
-    # Clear the cache:
-    pdpgapi.clear_ohlcv_cache("all")
-
-    # Generate some cache files by actually requesting data:
-    tickers = ["ZS", "ZBRA", "TSLA", "EA"]
-    for ticker in tickers:
-        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="week",
-                               span_multiplier=1, show_request=False, cache=True)
-        df = pdpgapi.fetch_ohlcvdf(ticker, start="2024-01-02", end="2024-12-31", span="month",
-                               span_multiplier=1, show_request=False, cache=True)
-
-    cleared = pdpgapi.clear_ohlcv_cache("EA")
-    assert len(cleared) == 2
-
-    cleared = pdpgapi.clear_ohlcv_cache("all")
-    assert len(cleared) == 6
 

@@ -593,9 +593,10 @@ class PolygonApi(_PolygonApiBase):
                         + str(cache_files)
                     )
 
-                # For the end time, we don't warn for 5% over (meaning, depending on start
-                # time, we potentially got 95% of what we requested).
-                dd = 0.05 * (dtm1 - dtm0)
+                # The time stamp on polygon.io aggregates corresponds to the Open of
+                # the aggregate; therefore the aggregate Closes just before the begining
+                # of the next aggregate and so we allow 99.9% past the last time stamp:
+                dd = 0.999 * (dtm1 - dtm0)
                 if end_dtm.date() > (dtm1 + dd).date():
                     self.logger.debug(f"dtm0,dtm1={dtm0}, {dtm1}")
                     warnings.warn(
