@@ -26,7 +26,6 @@ def plain_warning(w, wtype, wpath, wlnum, wdum, **kwargs):
     wfile = wpath.split("/")[-1]
     return "\n" + wclass + ": " + wfile + ":" + str(wlnum) + ": " + str(w) + "\n"
 
-
 warnings.formatwarning = plain_warning
 
 
@@ -105,7 +104,7 @@ class PolygonApi(_PolygonApiBase):
 
             loglevel: Loglevel to be used for logger "pdpolygonapi"
 
-            wait:     If Polygon allowed requests-per-minute exceeded, then wait and re-try.
+            wait:     If Polygon allowed-requests-per-minute exceeded, then wait and re-try.
 
             cache:    default value for cache, to be used when not specified within the
                       arguments of individual methods.
@@ -294,12 +293,11 @@ class PolygonApi(_PolygonApiBase):
             )
             span_multiplier = 1
 
-        # --------------------------------------------
-        # Note that polygon.io REST api accepts dates
-        # in YYYY-MM-DD format, but NOT with HH:MM:SS
-        # To specify hours, minutes, and seconds, the
-        # dates/times must be converted to millisecond
-        # unix timestamps:
+        # ------------------------------------------------------------------------
+        # Note that polygon.io REST api accepts dates in either YYYY-MM-DD format,
+        # or as millisecond unix timestamps.  But when using YYYY-MM-DD format, it
+        # does NOT accept the with HH:MM:SS.  To specify hours, minutes, and seconds,
+        # the dates/times must be converted to millisecond unix timestamps:
 
         end_msts = self._input_to_mstimestamp(end, "end")
         start_msts = self._input_to_mstimestamp(start, 0)
