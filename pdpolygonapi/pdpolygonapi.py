@@ -166,7 +166,7 @@ class PolygonApi(_PolygonApiBase):
             )
 
     def clear_ohlcv_cache(self, ticker):
-        #PolygonApi.cflock_acquire()
+        PolygonApi.cflock_acquire()
         cleared = []
         p = self._cache_dir()
         for child in p.iterdir():
@@ -176,8 +176,8 @@ class PolygonApi(_PolygonApiBase):
                 print("==> rm", child)
                 child.unlink()
                 cleared.append(child.name)
-        #PolygonApi.cached_files = []
-        #PolygonApi.cflock_release()
+        PolygonApi.cached_files = dict()
+        PolygonApi.cflock_release()
         return cleared
 
     def fetch_ohlcvdf(
@@ -295,26 +295,10 @@ class PolygonApi(_PolygonApiBase):
             )
 
         if not isinstance(span_multiplier, int):
-            warnings.warn(
-                "\n=========\n"
-                + "span_multiplier ("
-                + str(span_multiplier)
-                + ") must be integer.\n"
-                + "Resetting span_multipler to 1\n"
-                + "===========\n"
-            )
-            span_multiplier = 1
+            raise TypeError(f"`span_multiplier` must be an int (but is type {type(span_multiplier)}")
 
         if span_multiplier != 1 and span not in ("second","minute","hour"):
-            warnings.warn(
-                "\n===========\n"
-                + "span_multiplier ("
-                + str(span_multiplier)
-                + ") reset to (1) for all spans not in: "
-                + "(\"second\",\"minute\",\"hour\")\n"
-                + "===========\n"
-            )
-            span_multiplier = 1
+            raise ValueError(f"`span_multiplier` must be == 1 for `span` not in (\"second\",\"minute\",\"hour\"")
 
         if span_multiplier < 1:
             raise ValueError("span_multiplier must be >= 1")
@@ -591,10 +575,10 @@ class PolygonApi(_PolygonApiBase):
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
-                    self.logger.info(f"cache not found, requesting data for cache file: {cf}")
+                    self.logger.debug(f"cache not found, requesting data for cache file: {cf}")
                     cache_df = request_data_to_cache(year)
                     if isinstance(cache_df, pd.DataFrame):  # zero length ok to cache
-                        self.logger.info(f"caching data to file: {cf}")
+                        self.logger.debug(f"caching data to file: {cf}")
                         cache_df.to_csv(cf)
                         tempdf = pd.concat([tempdf, cache_df])
                         PolygonApi.cached_files[cf] = True

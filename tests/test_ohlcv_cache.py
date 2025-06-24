@@ -30,24 +30,15 @@ def test_clear_ohlcv_cache(pdpgapi):
 
 ticker_param_data = [
     # ["ticker", "start", "end", "span", "span_multiplier", cache_ratio],
-   #("SPY", "2023-05-01", "2025-05-01", "day", 1, 2.0),
-    ("SPY", "2023-05-01", "2025-05-01", "week", 1, 1.8),
-    ("SPY", "2023-05-01", "2025-05-01", "week", 2, 1.6),
-   #("SPY", "2023-05-01", "2025-05-01", "month", 1, 1.4),
-   #("SPY", "2023-05-01", "2025-05-01", "quarter", 1, 1.2),
-   #("SPY", "2025-01-01", "2025-05-01", "minute", 1, 12.0),
-   #("SPY", "2025-01-01", "2025-05-01", "hour", 1, 12.0),
-   #("SPY", "2025-01-01", "2025-05-01", "minute", 30, 12.0),
+    ("SPY", "2023-05-01", "2025-05-01", "day", 1, 2.0),
+    ("SPY", "2023-05-01", "2025-05-01", "week", 1, 1.7),
+  # ("SPY", "2023-05-01", "2025-05-01", "week", 2, 1.6),
+    ("SPY", "2023-05-01", "2025-05-01", "month", 1, 1.4),
+    ("SPY", "2023-05-01", "2025-05-01", "quarter", 1, 1.2),
+  # ("SPY", "2025-01-01", "2025-05-01", "minute", 1, 12.0),
+    ("SPY", "2025-01-01", "2025-05-01", "hour", 1, 12.0),
+  # ("SPY", "2025-01-01", "2025-05-01", "minute", 30, 12.0),
 ]
-
-# [INFO] span=day, multiplier=1, elapsed_no/elapsed_yes = 2.3190017961320297
-# [INFO] span=week, multiplier=1, elapsed_no/elapsed_yes = 2.08977740214934
-# [INFO] span=week, multiplier=2, elapsed_no/elapsed_yes = 2.575751547480549
-# [INFO] span=month, multiplier=1, elapsed_no/elapsed_yes = 2.0647527846842815
-# [INFO] span=quarter, multiplier=1, elapsed_no/elapsed_yes = 1.3463291106643103
-# [INFO] span=minute, multiplier=1, elapsed_no/elapsed_yes = 12.938717510981093
-# [INFO] span=hour, multiplier=1, elapsed_no/elapsed_yes = 15.45427075323932
-# [INFO] span=minute, multiplier=30, elapsed_no/elapsed_yes = 14.33493013140316
 
 LOOP = 36
 MAX_LOOP = 51
