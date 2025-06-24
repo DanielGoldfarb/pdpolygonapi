@@ -166,6 +166,7 @@ class PolygonApi(_PolygonApiBase):
             )
 
     def clear_ohlcv_cache(self, ticker):
+        #PolygonApi.cflock_acquire()
         cleared = []
         p = self._cache_dir()
         for child in p.iterdir():
@@ -175,6 +176,8 @@ class PolygonApi(_PolygonApiBase):
                 print("==> rm", child)
                 child.unlink()
                 cleared.append(child.name)
+        #PolygonApi.cached_files = []
+        #PolygonApi.cflock_release()
         return cleared
 
     def fetch_ohlcvdf(
@@ -228,15 +231,24 @@ class PolygonApi(_PolygonApiBase):
                        ticker symbol, span, span_multiplier, and year.
 
         span_multiplier (int): If span_multiplier > 1 then the time between adjacent
-                        data points is (span * span_multipler).  The span_multiplier
-                        is passed to Polygon.io
+                        data points is (span * span_multipler).
+
+                        NOTE WELL:  This api (fetch_ohlcvdf) will only pass the span-
+                        multipler to the polygon.io for spans less than one day and for
+                        span-multipliers that result in a period (span*span_multipler)
+                        less than a day.  (For spans of one day or greater (week, month,
+                        quarter, year) it makes no sense to use the span multiplier and
+                        only complicates issues, especially regarding the cache.)
+                        In other words, the span-multiplier is only applicable for spans
+                        of "second", "minute", or "hour".
+
                         NOTE: When span_multiplier is passed to Polygon.io then
-                              it is possible to have some time periods missing data,
-                              whereas when span multiplication is done via resampling
-                              then empty time periods can be *back* filled, or foward
-                              filled.  As of June 2025 resampling was removed from
-                              this interface; users wanting resampled data should do
-                              resampling on their own after calling this api.
+                        it is possible to have some time periods missing data,
+                        whereas when span multiplication is done via resampling
+                        then empty time periods can be *back* filled, or foward
+                        filled.  As of June 2025 resampling was removed from
+                        this interface; users wanting resampled data should do
+                        resampling on their own after calling this api.
 
         tz (str)     :  Time Zone for data returned.  Default is 'US/Eastern'
 
@@ -292,6 +304,21 @@ class PolygonApi(_PolygonApiBase):
                 + "===========\n"
             )
             span_multiplier = 1
+
+        if span_multiplier != 1 and span not in ("second","minute","hour"):
+            warnings.warn(
+                "\n===========\n"
+                + "span_multiplier ("
+                + str(span_multiplier)
+                + ") reset to (1) for all spans not in: "
+                + "(\"second\",\"minute\",\"hour\")\n"
+                + "===========\n"
+            )
+            span_multiplier = 1
+
+        if span_multiplier < 1:
+            raise ValueError("span_multiplier must be >= 1")
+
 
         # ------------------------------------------------------------------------
         # Note that polygon.io REST api accepts dates in either YYYY-MM-DD format,
@@ -365,7 +392,7 @@ class PolygonApi(_PolygonApiBase):
             # print('len(tempdf)=',len(tempdf))
             if "next_url" in rjson:
                 while "next_url" in rjson:
-                    self.logger.info('\n==> GETTING NEXT URL: "' + rjson["next_url"] + '"')
+                    self.logger.debug('\n==> GETTING NEXT URL: "' + rjson["next_url"] + '"')
                     nxtr = rjson["next_url"] + "&apikey=" + self.APIKEY
                     rjson = self._req_get_json(nxtr)
                     tempdf = pd.concat([tempdf, self._json_response_to_ohlcvdf(span, rjson)])
@@ -421,7 +448,7 @@ class PolygonApi(_PolygonApiBase):
                 end=cache_end,
                 span=span,
                 span_multiplier=span_multiplier,
-                show_request=True,
+                show_request=False,
                 cache=False,
             )
             # When requesting aggregate ohlcv data from polygon.io, if the start timestamp
@@ -617,6 +644,7 @@ class PolygonApi(_PolygonApiBase):
         start_date = self._input_to_datetime(start).date()
         first_date = tempdf.index[0].date()
         ix_start = 1 if first_date < start_date else 0
+        # print(f"start={start}, start_date={start_date}, first_date={first_date}, ix_start={ix_start}")
         return tempdf.iloc[ix_start:]
 
     class OptionsChain:

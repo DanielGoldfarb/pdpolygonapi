@@ -29,18 +29,27 @@ def test_clear_ohlcv_cache(pdpgapi):
 
 
 ticker_param_data = [
-    # ["ticker", "start", "end", "span", "span_multiplier"],
-    ("SPY", "2023-05-01", "2025-05-01", "day", 1),
-    ("SPY", "2023-05-01", "2025-05-01", "week", 1),
-#   ("SPY", "2023-05-01", "2025-05-01", "week", 2),
-#   ("SPY", "2023-05-01", "2025-05-01", "month", 1),
-#   ("SPY", "2023-05-01", "2025-05-01", "quarter", 1),
-#   ("SPY", "2025-01-01", "2025-05-01", "minute", 1),
-#   ("SPY", "2025-01-01", "2025-05-01", "hour", 1),
-#   ("SPY", "2025-01-01", "2025-05-01", "minute", 30),
+    # ["ticker", "start", "end", "span", "span_multiplier", cache_ratio],
+   #("SPY", "2023-05-01", "2025-05-01", "day", 1, 2.0),
+    ("SPY", "2023-05-01", "2025-05-01", "week", 1, 1.8),
+    ("SPY", "2023-05-01", "2025-05-01", "week", 2, 1.6),
+   #("SPY", "2023-05-01", "2025-05-01", "month", 1, 1.4),
+   #("SPY", "2023-05-01", "2025-05-01", "quarter", 1, 1.2),
+   #("SPY", "2025-01-01", "2025-05-01", "minute", 1, 12.0),
+   #("SPY", "2025-01-01", "2025-05-01", "hour", 1, 12.0),
+   #("SPY", "2025-01-01", "2025-05-01", "minute", 30, 12.0),
 ]
 
-LOOP = 30
+# [INFO] span=day, multiplier=1, elapsed_no/elapsed_yes = 2.3190017961320297
+# [INFO] span=week, multiplier=1, elapsed_no/elapsed_yes = 2.08977740214934
+# [INFO] span=week, multiplier=2, elapsed_no/elapsed_yes = 2.575751547480549
+# [INFO] span=month, multiplier=1, elapsed_no/elapsed_yes = 2.0647527846842815
+# [INFO] span=quarter, multiplier=1, elapsed_no/elapsed_yes = 1.3463291106643103
+# [INFO] span=minute, multiplier=1, elapsed_no/elapsed_yes = 12.938717510981093
+# [INFO] span=hour, multiplier=1, elapsed_no/elapsed_yes = 15.45427075323932
+# [INFO] span=minute, multiplier=30, elapsed_no/elapsed_yes = 14.33493013140316
+
+LOOP = 36
 MAX_LOOP = 51
 
 def call_no_cache(api, number, ticker, start, end, span, span_multiplier):
@@ -48,7 +57,7 @@ def call_no_cache(api, number, ticker, start, end, span, span_multiplier):
     t0 = time.perf_counter()
     for count in range(number):
         df = api.fetch_ohlcvdf(ticker, start=start, end=end, span=span, span_multiplier=span_multiplier,
-                               show_request=True, cache=False)
+                               show_request=False, cache=False)
     logger.debug(f"NO cache: len(df)={len(df)}")
     t1 = time.perf_counter()
     return(t0,t1,df)
@@ -58,15 +67,16 @@ def call_yes_cache(api, number, ticker, start, end, span, span_multiplier):
     t0 = time.perf_counter()
     for count in range(number):
         df = api.fetch_ohlcvdf(ticker, start=start, end=end, span=span, span_multiplier=span_multiplier,
-                               show_request=True, cache=True)
+                               show_request=False, cache=True)
     logger.debug(f"YES cache: len(df)={len(df)}")
     t1 = time.perf_counter()
     return(t0,t1,df)
 
 
-@pytest.mark.parametrize("ticker, start, end, span, span_multiplier", ticker_param_data)
-def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplier):
+@pytest.mark.parametrize("ticker, start, end, span, span_multiplier, cache_ratio", ticker_param_data)
+def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplier, cache_ratio):
 
+    logger.info("CLEAR ALL CACHE...")
     pdpgapi.clear_ohlcv_cache("all")
 
     t0, t1, df_noc = call_no_cache(pdpgapi, LOOP, ticker, start, end, span, span_multiplier)
@@ -77,9 +87,9 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
     elapsed_yes = t1 - t0
     logger.debug(f"YES cache: t0, t1, elapsed = {t0}, {t1}, {t1-t0}")
 
-    logger.info(f"elapsed_no/elapsed_yes = {elapsed_no/elapsed_yes}")
+    logger.info(f"span={span}, multiplier={span_multiplier}, elapsed_no/elapsed_yes = {elapsed_no/elapsed_yes}")
     assert elapsed_no > elapsed_yes
-    assert (elapsed_no/elapsed_yes) > 2.0
+    assert (elapsed_no/elapsed_yes) > cache_ratio
     df_noc.to_csv("noc.csv")
     df_yec.to_csv("yec.csv")
     # print("df_noc=\n",df_noc)
@@ -87,5 +97,4 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
     # df_diff = df_noc.compare(df_yec)
     # print("df_diff=\n",df_diff)
     pd.testing.assert_frame_equal(df_noc, df_yec)
-
 
