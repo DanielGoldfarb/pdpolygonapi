@@ -28,7 +28,7 @@ def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multipli
     if isinstance(df, pd.DataFrame):
         sd = start[2:].replace("-","")
         ed = end[2:].replace("-","")
-        ref_name = f"reference_data/{ticker}_{sd}_{ed}_{span}_{span_multiplier}.csv"
+        ref_name = f"tests/reference_data/{ticker}_{sd}_{ed}_{span}_{span_multiplier}.csv"
         logger.debug(f"len(df)={len(df)}  regolden = {regolden}")
         logger.debug(f"{ref_name}")
         if "all" in regolden or ref_name in regolden:
