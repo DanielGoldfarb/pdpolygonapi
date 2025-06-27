@@ -63,8 +63,8 @@ exclude = [
     "venv",
 ]
 
-# Same as Black (except line-length 100, not 88)
-line-length = 100
+# Same as Black (except line-length 110, not 88)
+line-length = 110
 indent-width = 4
 
 # Assume Python 3.10

@@ -21,6 +21,11 @@ ticker_param_data = [
 @pytest.mark.parametrize("ticker, start, end, span, span_multiplier", ticker_param_data)
 def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multiplier):
 
+    logger.info(f"In test_ohlcv_stocks: logger.getEffectiveLevel()={logger.getEffectiveLevel()}")
+    for h in logger.handlers:
+        level_name = logging.getLevelName(h.level)
+        logger.info(f"In test_ohlcv_stocks: handler:{h.name} level={level_name}({h.level})")
+
     df = pdpgapi.fetch_ohlcvdf(ticker, start=start, end=end, span=span, span_multiplier=span_multiplier)
 
     ref_name = ""
@@ -33,15 +38,30 @@ def test_ohlcv_stocks(pdpgapi, regolden, ticker, start, end, span, span_multipli
         logger.debug(f"{ref_name}")
         if "all" in regolden or ref_name in regolden:
             df.to_csv(ref_name)
-            message = f"NOT TESTING: REGENERATING 'golden' reference file: '{ref_name}'"
-            pytest.fail(message)
-        else:
-            rdf = pd.read_csv(ref_name, index_col=ticker, parse_dates=True)
-            # logger.info(f"rdf=\n{rdf.iloc[[0,-1]]}")
-            # https://saturncloud.io/blog/how-to-confirm-equality-of-two-pandas-dataframes
-            try:
-                pd.testing.assert_frame_equal(df, rdf)
-            except:
-                logger.error(f"Data Failed to match reference: {ref_name}")
-                raise
+            logger.info(f"REGENERATING 'golden' reference file: '{ref_name}'")
 
+        # logger.info(f"rdf=\n{rdf.iloc[[0,-1]]}")
+        # https://saturncloud.io/blog/how-to-confirm-equality-of-two-pandas-dataframes
+        try:
+            rdf = pd.read_csv(ref_name, index_col=ticker, parse_dates=True)
+            pd.testing.assert_frame_equal(df, rdf)
+        except (FileNotFoundError, AssertionError) as e:
+            if "failures" in regolden:
+                logger.info(f"REGENERATING failed 'golden' reference file: '{ref_name}'")
+                df.to_csv(ref_name)
+                rdf = pd.read_csv(ref_name, index_col=ticker, parse_dates=True)
+                # rdf.iloc[4,2] = -99.99
+                try:
+                    # df_diff = df.compare(rdf)
+                    # are_equal = df.equals(rdf)
+                    pd.testing.assert_frame_equal(df, rdf)
+                except AssertionError as e2:
+                    logger.error(f"GOT ASSERTION ERROR for '{ref_name}':\n{e2}")
+                    raise
+                except Exception as e2:
+                    logger.error(f"{ref_name} assert exception: {e2}")
+                    raise
+            else:
+                logger.error(f"Data Failed to match reference: {ref_name}")
+                logger.error(f"exception: {e}")
+                raise
