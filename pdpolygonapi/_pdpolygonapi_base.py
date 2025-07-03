@@ -41,7 +41,7 @@ class _PolygonApiBase:
     def _req_get_json(self, req):
         have_response = False
         while not have_response:
-            r = requests.get(req, timeout=4)
+            r = requests.get(req, timeout=5)
             rjson = r.json()
             if (
                 self.wait

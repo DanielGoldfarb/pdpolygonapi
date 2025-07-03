@@ -24,7 +24,7 @@ def regolden(request):
 
 @pytest.fixture
 def pdpgapi():
-    logger.info(f"In pdpgapi test fixture: logger.getEffectiveLevel()={logger.getEffectiveLevel()}")
+    # logger.info(f"In pdpgapi test fixture: logger.getEffectiveLevel()={logger.getEffectiveLevel()}")
     # print(f"logger={logger}")
     # print(f"logger.handlers={logger.handlers}")
     # print(f"logger.parent={logger.parent}")
