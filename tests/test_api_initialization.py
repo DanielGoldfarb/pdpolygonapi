@@ -6,6 +6,7 @@
 
 import logging
 import os
+import pytest
 
 from pdpolygonapi import PolygonApi
 
@@ -58,6 +59,14 @@ def test_api_init_04():
     assert api.APIKEY != api_key
     assert api.APIKEY == "9876543210"
 
+    with pytest.raises(ValueError) as excinfo:
+        api = PolygonApi(apikey="123")
+    assert "APIKEY must be " in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        api = PolygonApi(apikey=9876543210)
+    assert "APIKEY must be " in str(excinfo.value)
+
 
 ###     def __init__(
 ###         self,
@@ -67,7 +76,6 @@ def test_api_init_04():
 ###         wait: bool = True,
 ###         cache: bool = False,
 ###     ) -> None:
-
 
 def test_api_init_05():
     """Test remaining constructor kwargs"""
