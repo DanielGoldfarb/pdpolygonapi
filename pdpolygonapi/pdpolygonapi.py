@@ -626,7 +626,7 @@ class PolygonApi(_PolygonApiBase):
         #print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
 
         start_date = self._input_to_datetime(start).date()
-        first_date = tempdf.index[0].date()
+        first_date = tempdf.index[0].date() if len(tempdf) > 0 else start_date
         ix_start = 1 if first_date < start_date else 0
         # print(f"start={start}, start_date={start_date}, first_date={first_date}, ix_start={ix_start}")
         return tempdf.iloc[ix_start:]

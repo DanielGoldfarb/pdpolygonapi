@@ -60,6 +60,11 @@ class _PolygonApiBase:
 
     def _json_response_to_ohlcvdf(self, span, rjson, tz="US/Eastern"):
         if "results" not in rjson:
+            #  When have no results, so we will return an empty data frame,
+            #  but we want to determine if there was an error that we should log,
+            #  or whether this simply means we have valid empty results, for
+            #  example, the ticker was not traded in the requested timeframe.
+            message = None
             if "message" in rjson:
                 message = rjson["message"]
             elif "error" in rjson:
@@ -69,11 +74,16 @@ class _PolygonApiBase:
             ):
                 sreq = str(req)[: req.find("&apiKey=")] + "&apiKey=***"
                 message = "No results returned for req=" + sreq
-            else:  #  valid empty results (for example, ticker was not traded for specified datetime)
-                return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
+            else:
+                #  This means we have valid empty results,
+                #  for example, ticker was not traded for specified datetime.
+                pass
 
-            warnings.warn("\n" + message)
-            return None
+            if message and "status" in rjson:
+                message += " (" + rjson["status"] + ")"
+
+            if message: self.logger.warning(message)
+            return pd.DataFrame(columns=self._OHLCV_COLMAP.values())
 
         tempdf = pd.DataFrame(rjson["results"])
 
