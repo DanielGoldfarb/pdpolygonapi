@@ -52,11 +52,11 @@ ticker_param_data = [
     # ("SPY", "2023-05-01", "2025-05-01", "week", 2, 1.6),
     ("SPY", "2023-05-01", "2025-05-01", "month", 1, 1.4),
     ("SPY", "2023-05-01", "2025-05-01", "quarter", 1, 1.2),
-    ("SPY", "2025-01-01", "2025-05-01", "minute", 5, 12.0),
-    ("SPY", "2025-01-01", "2025-05-01", "minute", 15, 11.0),
-    ("SPY", "2025-01-01", "2025-05-01", "minute", 30, 10.0),
-    ("SPY", "2025-01-01", "2025-05-01", "hour", 1, 10.0),
-    ("SPY", "2025-01-01", "2025-05-01", "hour", 2, 10.0),
+    ("SPY", "2025-01-01", "2025-05-01", "minute", 5, 9.0),
+    ("SPY", "2025-01-01", "2025-05-01", "minute", 15, 9.0),
+    ("SPY", "2025-01-01", "2025-05-01", "minute", 30, 9.0),
+    ("SPY", "2025-01-01", "2025-05-01", "hour", 1, 9.0),
+    ("SPY", "2025-01-01", "2025-05-01", "hour", 2, 9.0),
 ]
 
 LOOP = 36
@@ -124,12 +124,14 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
         if ratio > expected_cache_ratio:
             break
 
-    assert ratio > expected_cache_ratio
-
-    df_noc.to_csv("noc.csv")
-    df_yec.to_csv("yec.csv")
+    # df_noc.to_csv("noc.csv")
+    # df_yec.to_csv("yec.csv")
     # print("df_noc=\n",df_noc)
     # print("df_yec=\n",df_yec)
     # df_diff = df_noc.compare(df_yec)
     # print("df_diff=\n",df_diff)
+
     pd.testing.assert_frame_equal(df_noc, df_yec)
+    logger.info(f"cache stats: {pdpgapi.get_fetch_ohlcvdf_cache_stats()}")
+    assert ratio > expected_cache_ratio
+

@@ -5,6 +5,7 @@
 #  class for accessing polygon.io REST api.
 # ---
 
+import copy
 import datetime
 import logging
 import os
@@ -27,7 +28,6 @@ def plain_warning(w, wtype, wpath, wlnum, wdum, **kwargs):
     return "\n" + wclass + ": " + wfile + ":" + str(wlnum) + ": " + str(w) + "\n"
 
 warnings.formatwarning = plain_warning
-
 
 class PolygonApi(_PolygonApiBase):
     """
@@ -71,6 +71,7 @@ class PolygonApi(_PolygonApiBase):
 
     cache_file_lock = MultiProcessLock()
     cached_files = dict()
+
 
     def cflock_acquire():
         PolygonApi.cache_file_lock.acquire()
@@ -142,6 +143,7 @@ class PolygonApi(_PolygonApiBase):
 
         self.wait = wait
         self.cache_initializer = cache
+        self.fetch_ohlcvdf_cache_stats = dict(hits=0,lookups=0,misses=0)
 
     def _cache_dir(self):
         cache_dir = pathlib.Path.home() / ".pdpolygonapi/ohlcv_cache"
@@ -178,7 +180,11 @@ class PolygonApi(_PolygonApiBase):
                 cleared.append(child.name)
         PolygonApi.cached_files = dict()
         PolygonApi.cflock_release()
+        self.fetch_ohlcvdf_cache_stats = dict(hits=0,lookups=0,misses=0)
         return cleared
+
+    def get_fetch_ohlcvdf_cache_stats(self):
+        return copy.deepcopy(self.fetch_ohlcvdf_cache_stats)
 
     def fetch_ohlcvdf(
         self,
@@ -517,6 +523,7 @@ class PolygonApi(_PolygonApiBase):
                     # this cache file; therefore this `read_csv()` should work ok:
                     # (no need to get lock on cache file).
                     tempdf = pd.concat([tempdf, pd.read_csv(cf, index_col=0, parse_dates=True)])
+                    self.fetch_ohlcvdf_cache_stats["hits"] += 1
                     self.logger.debug(f"jj={jj} read-in cache file:{cf}")
                     self.logger.debug(_str_df(f"jj={jj} tempdf(0)", tempdf))
                     continue
@@ -559,6 +566,7 @@ class PolygonApi(_PolygonApiBase):
                             raise ValueError  # jump to except:
                     self.logger.info(f"jj={jj}: using cache file {cf}, size={size}")
                     nextdf = pd.read_csv(cf, index_col=0, parse_dates=True)
+                    self.fetch_ohlcvdf_cache_stats["lookups"] += 1
                     self.logger.debug(_str_df("nextdf(1)", nextdf))
                     if year == years[-1] and len(nextdf) > 0:
                         end_dtm = self._input_to_datetime(end)
@@ -583,6 +591,7 @@ class PolygonApi(_PolygonApiBase):
                         tempdf = pd.concat([tempdf, cache_df])
                         PolygonApi.cached_files[cf] = True
                         self.logger.debug(_str_df("tempdf(2)", tempdf))
+                    self.fetch_ohlcvdf_cache_stats["misses"] += 1
                     PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
