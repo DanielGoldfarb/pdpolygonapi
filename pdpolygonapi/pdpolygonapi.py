@@ -27,7 +27,9 @@ def plain_warning(w, wtype, wpath, wlnum, wdum, **kwargs):
     wfile = wpath.split("/")[-1]
     return "\n" + wclass + ": " + wfile + ":" + str(wlnum) + ": " + str(w) + "\n"
 
+
 warnings.formatwarning = plain_warning
+
 
 class PolygonApi(_PolygonApiBase):
     """
@@ -71,7 +73,6 @@ class PolygonApi(_PolygonApiBase):
 
     cache_file_lock = MultiProcessLock()
     cached_files = dict()
-
 
     def cflock_acquire():
         PolygonApi.cache_file_lock.acquire()
@@ -143,7 +144,7 @@ class PolygonApi(_PolygonApiBase):
 
         self.wait = wait
         self.cache_initializer = cache
-        self.fetch_ohlcvdf_cache_stats = dict(hits=0,lookups=0,misses=0)
+        self.fetch_ohlcvdf_cache_stats = dict(hits=0, lookups=0, misses=0)
 
     def _cache_dir(self):
         cache_dir = pathlib.Path.home() / ".pdpolygonapi/ohlcv_cache"
@@ -163,24 +164,20 @@ class PolygonApi(_PolygonApiBase):
                 + "This REALLY should NOT happen anymore!  Rather, always cache by YEAR!\n"
                 + "===========\n"
             )
-            return self._cache_dir() / (
-                ticker + "." + str(span) + "." + str(span_multiplier) + ".csv.gz"
-            )
+            return self._cache_dir() / (ticker + "." + str(span) + "." + str(span_multiplier) + ".csv.gz")
 
     def clear_ohlcv_cache(self, ticker):
         PolygonApi.cflock_acquire()
         cleared = []
         p = self._cache_dir()
         for child in p.iterdir():
-            if (ticker == "all" or
-                ((tlen := len(ticker)+1) > 1 and ticker+"." == child.name[0:tlen])
-               ):
+            if ticker == "all" or ((tlen := len(ticker) + 1) > 1 and ticker + "." == child.name[0:tlen]):
                 print("==> rm", child)
                 child.unlink()
                 cleared.append(child.name)
         PolygonApi.cached_files = dict()
         PolygonApi.cflock_release()
-        self.fetch_ohlcvdf_cache_stats = dict(hits=0,lookups=0,misses=0)
+        self.fetch_ohlcvdf_cache_stats = dict(hits=0, lookups=0, misses=0)
         return cleared
 
     def get_fetch_ohlcvdf_cache_stats(self):
@@ -272,14 +269,14 @@ class PolygonApi(_PolygonApiBase):
         #  -------------------------------
         #   In [24]: logging.error("ticker=%s, date=%s, i=%s, x=%s" % (t,pydt,i,x))
         #   ERROR:root:ticker=SPY, date=2025-06-09 22:12:44.237548, i=12345, x=1.2345
-        #   
+        #
         #   In [25]: logging.error("ticker=%s, date=%s, i=%s, x=%s",t,pydt,i,x)
         #   ERROR:root:ticker=SPY, date=2025-06-09 22:12:44.237548, i=12345, x=1.2345
 
-        self.logger.debug("fetch_ohlcvdf: ticker=%s, start=%s, end=%s",ticker,start,end)
-        self.logger.debug("fetch_ohlcvdf: span=%s, span_multiplier=%s",span,span_multiplier)
-        self.logger.debug("fetch_ohlcvdf: market=%s, cache=%s",market,cache)
-        self.logger.debug("fetch_ohlcvdf: tz=%s, show_request=%s",tz,show_request)
+        self.logger.debug("fetch_ohlcvdf: ticker=%s, start=%s, end=%s", ticker, start, end)
+        self.logger.debug("fetch_ohlcvdf: span=%s, span_multiplier=%s", span, span_multiplier)
+        self.logger.debug("fetch_ohlcvdf: market=%s, cache=%s", market, cache)
+        self.logger.debug("fetch_ohlcvdf: tz=%s, show_request=%s", tz, show_request)
 
         valid_markets = ("regular", "all")
         if market not in valid_markets:
@@ -295,20 +292,17 @@ class PolygonApi(_PolygonApiBase):
         if span == "second" and cache:
             cache = False
             warnings.warn(
-                "\n=========\n"
-                + "cache will not be used for less than minutely data.\n"
-                + "===========\n"
+                "\n=========\n" + "cache will not be used for less than minutely data.\n" + "===========\n"
             )
 
         if not isinstance(span_multiplier, int):
             raise TypeError(f"`span_multiplier` must be an int (but is type {type(span_multiplier)}")
 
-        if span_multiplier != 1 and span not in ("second","minute","hour"):
-            raise ValueError(f"`span_multiplier` must be == 1 for `span` not in (\"second\",\"minute\",\"hour\"")
+        if span_multiplier != 1 and span not in ("second", "minute", "hour"):
+            raise ValueError(f'`span_multiplier` must be == 1 for `span` not in ("second","minute","hour"')
 
         if span_multiplier < 1:
             raise ValueError("span_multiplier must be >= 1")
-
 
         # ------------------------------------------------------------------------
         # Note that polygon.io REST api accepts dates in either YYYY-MM-DD format,
@@ -429,8 +423,8 @@ class PolygonApi(_PolygonApiBase):
                 cache_start = datetime.datetime(today.year, 1, 1)
             cache_start = cache_start.replace(hour=9, minute=30, second=0, microsecond=0)
             cache_end = cache_end.replace(hour=16, minute=00, second=00, microsecond=0)
-            #cache_start = cache_start.replace(hour=0, minute=0, second=0, microsecond=1)
-            #cache_end = cache_end.replace(hour=23, minute=59, second=59, microsecond=999999)
+            # cache_start = cache_start.replace(hour=0, minute=0, second=0, microsecond=1)
+            # cache_end = cache_end.replace(hour=23, minute=59, second=59, microsecond=999999)
             self.logger.debug(f"cache_start={cache_start}, cache_end={cache_end}")
             tempdf = self.fetch_ohlcvdf(
                 ticker,
@@ -463,10 +457,10 @@ class PolygonApi(_PolygonApiBase):
             # then we will be consistent by keeping the last aggregate, even if some of its data
             # is in the following year and/or beyond the requested end timestamp.
 
-            # (3) Note also that, depending on the size of the aggregate, if the requested end 
+            # (3) Note also that, depending on the size of the aggregate, if the requested end
             # time is close to the present or in the future, it is possible that the last aggregate
             # returned from polygon.io *will not be complete* since in order to be complete it
-            # would have to contain data from the future. 
+            # would have to contain data from the future.
 
             # Example:
             #  Request *weekly* data from 2021-01-01 till 2021-06-30:
@@ -575,11 +569,11 @@ class PolygonApi(_PolygonApiBase):
                         if end_dtm > dtm1:
                             self.logger.warning(f"cache ({cf}) too short ... requesting more data.")
                             raise RuntimeError(f"cache ({cf}) too short ... requesting more data.")
-                    #self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
-                    #self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
+                    # self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
+                    # self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
                     tlen = len(tempdf)
                     tempdf = pd.concat([tempdf, nextdf])
-                    #self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
+                    # self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
                     PolygonApi.cached_files[cf] = True
                     PolygonApi.cflock_release()
                 except:
@@ -632,7 +626,7 @@ class PolygonApi(_PolygonApiBase):
         else:
             tempdf = request_data()
 
-        #print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
+        # print("BOTTOM of fetch_ohlcv(): tempdf.iloc[[0,1,-2,-1]]=\n",tempdf.iloc[[0,1,-2,-1]])
 
         start_date = self._input_to_datetime(start).date()
         first_date = tempdf.index[0].date() if len(tempdf) > 0 else start_date
@@ -653,9 +647,7 @@ class PolygonApi(_PolygonApiBase):
             self._expirations = pd.Series(expvalues, index=expindex, name="Expiration")
             self._strikes = {}
             for xp in expvalues:
-                self._strikes[xp] = (
-                    self._tickers.loc[xp].index.get_level_values(0).unique().to_series()
-                )
+                self._strikes[xp] = self._tickers.loc[xp].index.get_level_values(0).unique().to_series()
 
         @property
         def tickers(self):
@@ -679,9 +671,7 @@ class PolygonApi(_PolygonApiBase):
                 return self._strikes[exp]
             return None
 
-    def fetch_options_chain(
-        self, underlying, start_expiration=None, end_expiration=None, show_request=False
-    ):
+    def fetch_options_chain(self, underlying, start_expiration=None, end_expiration=None, show_request=False):
         """
         Given an underlying ticker, fetch all of the options for that underlying
         that have expiration dates between (and including) `start_expiration` and
@@ -757,9 +747,7 @@ class PolygonApi(_PolygonApiBase):
                 print("Requesting options chain data ...", end="")
             rd = self._req_get_json(req)
             if "results" not in rd:
-                totdf = pd.DataFrame(
-                    columns=["contract_type", "expiration_date", "strike_price", "ticker"]
-                )
+                totdf = pd.DataFrame(columns=["contract_type", "expiration_date", "strike_price", "ticker"])
                 break
             rdf = pd.DataFrame(rd["results"])
             rdf.drop(
@@ -772,10 +760,13 @@ class PolygonApi(_PolygonApiBase):
                 ],
                 axis=1,
                 inplace=True,
+                errors="ignore",
             )
             if totdf is None:
-                totdf = pd.DataFrame(columns=rdf.columns)
-            totdf = pd.concat([totdf, rdf])
+                totdf = rdf
+            else:
+                totdf = pd.concat([totdf, rdf])
+
             while "next_url" in rd:
                 print(".", end="")
                 req = rd["next_url"] + "&apiKey=" + self.APIKEY
@@ -794,10 +785,18 @@ class PolygonApi(_PolygonApiBase):
                     ],
                     axis=1,
                     inplace=True,
+                    errors="ignore",
                 )
                 totdf = pd.concat([totdf, rdf])
             if not show_request:
                 print()
+
+        # Handle empty results case
+        if totdf is None or len(totdf) == 0:
+            # Create empty DataFrame with correct structure
+            empty_index = pd.MultiIndex.from_tuples([], names=["Expiration", "Strike", "Type"])
+            empty_tickers = pd.Series([], index=empty_index, name="Ticker", dtype=object)
+            return self.OptionsChain(underlying, empty_tickers)
 
         totdf.rename(
             columns={
@@ -818,27 +817,15 @@ class PolygonApi(_PolygonApiBase):
     def fetch_quotes(self, ticker, str_date, show_request=False):
         # Format nanosecond UTC unix timestamps:
         ts1 = str(
-            int(
-                pd.Timestamp(str_date + " 09:30", tz="US/Eastern").tz_convert("UTC").timestamp()
-                * (10**9)
-            )
+            int(pd.Timestamp(str_date + " 09:30", tz="US/Eastern").tz_convert("UTC").timestamp() * (10**9))
         )
         ts2 = str(
-            int(
-                pd.Timestamp(str_date + " 16:00", tz="US/Eastern").tz_convert("UTC").timestamp()
-                * (10**9)
-            )
+            int(pd.Timestamp(str_date + " 16:00", tz="US/Eastern").tz_convert("UTC").timestamp() * (10**9))
         )
 
         req = (
             "https://api.polygon.io/v3/quotes/" + ticker + "?"
-            "timestamp.gte="
-            + ts1
-            + "&timestamp.lte="
-            + ts2
-            + "&limit=50000&"
-            + "apiKey="
-            + self.APIKEY
+            "timestamp.gte=" + ts1 + "&timestamp.lte=" + ts2 + "&limit=50000&" + "apiKey=" + self.APIKEY
         )
 
         print(
