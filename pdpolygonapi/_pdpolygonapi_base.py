@@ -19,6 +19,9 @@ class _PolygonApiBase:
 
     def __init__(self):
         self.APIKEY = None
+        self._initial_timeout = 6  # seconds
+        self._retry_timeout = 12  # seconds
+        self._retry_timeout_behavior = "raise"  # or "log"
 
     def _input_to_datetime(self, input, adj=None):
         if isinstance(input, int):
@@ -41,7 +44,25 @@ class _PolygonApiBase:
     def _req_get_json(self, req):
         have_response = False
         while not have_response:
-            r = requests.get(req, timeout=5)
+            # Try with initial timeout, retry once with longer timeout if needed
+            try:
+                r = requests.get(req, timeout=self._initial_timeout)
+            except requests.exceptions.Timeout:
+                sreq = req[: req.find("&apiKey=")] + "&apiKey=***"
+                self.logger.warning(
+                    f"Timeout at {self._initial_timeout}s, retrying with {self._retry_timeout}s timeout..."
+                )
+                try:
+                    r = requests.get(req, timeout=self._retry_timeout)
+                except requests.exceptions.Timeout:
+                    if self._retry_timeout_behavior == "raise":
+                        raise
+                    else:  # "log" - log error and return empty response
+                        self.logger.error(
+                            f"Timeout at {self._retry_timeout}s (retry failed): {sreq}"
+                        )
+                        return {}
+
             rjson = r.json()
             if (
                 self.wait
