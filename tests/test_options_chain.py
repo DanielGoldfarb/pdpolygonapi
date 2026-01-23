@@ -193,8 +193,6 @@ class TestOptionsChainProperties:
         """Test that strikes dict values are pandas Series."""
         strikes = spy_options_chain.strikes
 
-        breakpoint()
-
         for exp, strike_series in strikes.items():
             assert isinstance(strike_series, pd.Series), f"Strikes for {exp} should be a Series"
 
