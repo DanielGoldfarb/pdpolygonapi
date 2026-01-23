@@ -86,15 +86,17 @@ class _PolygonApiBase:
             #  or whether this simply means we have valid empty results, for
             #  example, the ticker was not traded in the requested timeframe.
             message = None
-            if "message" in rjson:
+            if len(rjson) == 0:
+                # Empty dict returned from timeout - already logged in _req_get_json
+                pass
+            elif "message" in rjson:
                 message = rjson["message"]
             elif "error" in rjson:
                 message = rjson["error"]
             elif "status" not in rjson or (
                 "status" in rjson and rjson["status"] != "OK" and rjson["status"] != "DELAYED"
             ):
-                sreq = str(req)[: req.find("&apiKey=")] + "&apiKey=***"
-                message = "No results returned for req=" + sreq
+                message = "No results returned (status missing or unknown)"
             else:
                 #  This means we have valid empty results,
                 #  for example, ticker was not traded for specified datetime.
