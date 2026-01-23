@@ -114,6 +114,8 @@ class PolygonApi(_PolygonApiBase):
         Returns:
             An instance of the PolygonApi class
         """
+        super().__init__()  # Initialize base class attributes
+
         if apikey is not None:
             self.APIKEY = apikey
         elif envkey is not None:
