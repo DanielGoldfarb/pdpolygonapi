@@ -12,8 +12,7 @@ import os
 import pathlib
 import warnings
 
-# from  multiprocess    import Lock as MultiProcessLock # prefer
-from multiprocessing import Lock as MultiProcessLock  # more common
+import fcntl
 
 import numpy as np
 import pandas as pd
@@ -57,31 +56,68 @@ class PolygonApi(_PolygonApiBase):
     # 3. MAYBE PASS SPAN_MULTIPLIER WHEN SPAN >= 'day' ?
 
     # --------------------------------------------------------------------- #
-    # Note: regarding the cache_file_lock:  We want to lock to avoid having
-    #       one process reading a cache file while another process is in the
-    #       middle of writing a cache file.  (This is so we can multiprocess
-    #       many model scenarios at the same time).  It turns out that the
-    #       lock is costly, slowing down a job of 24 scenarios on 8 cores by
-    #       two and a half times.  I was locking all reads and writes to all
-    #       cache files.  But then I realized, that created more contention
-    #       than necessary: maybe it makes sense to have a separate lock for
-    #       each file.  Then (before implementing that) it occured to me that
-    #       once we "know" that a cache file exists, there is no longer a need
-    #       to lock since multiple simulateous reads are fine.  So that is
-    #       what I am going to implement next: Only lock for each cache until
-    #       we know that we have a cache file for that request.
+    # File-level locking for cache safety across arbitrary multi-process
+    # callers (subprocess.run, Pool, etc.).  Uses fcntl.flock() which is
+    # a kernel-level lock on the file descriptor — works across any
+    # unrelated OS processes, not just forked children.
+    #
+    # Per-file locking eliminates the old single-lock contention problem:
+    # unrelated cache files never block each other.
+    #
+    # cached_files is a per-process optimization: once we know a cache file
+    # exists, skip the stat+lock on re-read (concurrent reads are safe).
 
-    cache_file_lock = MultiProcessLock()
     cached_files = dict()
 
-    def cflock_acquire():
-        PolygonApi.cache_file_lock.acquire()
+    @staticmethod
+    def _lock_path(cache_path):
+        """Return the companion .lock file path for a cache file."""
+        return pathlib.Path(str(cache_path) + ".lock")
 
-    def cflock_release():
-        try:
-            PolygonApi.cache_file_lock.release()
-        except:
-            pass
+    @staticmethod
+    def _read_cache_file(cache_path):
+        """Read a cache CSV file with a shared (read) flock.
+
+        Multiple concurrent readers are allowed; a writer is blocked
+        until all readers release.
+
+        Args:
+            cache_path: pathlib.Path to the .csv.gz cache file.
+
+        Returns:
+            pd.DataFrame read from the cache file.
+        """
+        lock_path = PolygonApi._lock_path(cache_path)
+        with open(lock_path, "w") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_SH)
+            return pd.read_csv(cache_path, index_col=0, parse_dates=True)
+
+    @staticmethod
+    def _write_cache_file(cache_path, df):
+        """Write a DataFrame to a cache CSV file with an exclusive flock.
+
+        Blocks until all readers and other writers release.
+
+        Args:
+            cache_path: pathlib.Path to the .csv.gz cache file.
+            df: pd.DataFrame to write.
+        """
+        lock_path = PolygonApi._lock_path(cache_path)
+        with open(lock_path, "w") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            df.to_csv(cache_path)
+
+    @staticmethod
+    def _remove_cache_file(cache_path):
+        """Remove a cache file with an exclusive flock.
+
+        Args:
+            cache_path: pathlib.Path to the .csv.gz cache file.
+        """
+        lock_path = PolygonApi._lock_path(cache_path)
+        with open(lock_path, "w") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            cache_path.unlink(missing_ok=True)
 
     def __init__(
         self,
@@ -169,16 +205,16 @@ class PolygonApi(_PolygonApiBase):
             return self._cache_dir() / (ticker + "." + str(span) + "." + str(span_multiplier) + ".csv.gz")
 
     def clear_ohlcv_cache(self, ticker):
-        PolygonApi.cflock_acquire()
         cleared = []
         p = self._cache_dir()
         for child in p.iterdir():
+            if child.name.endswith(".lock"):
+                continue
             if ticker == "all" or ((tlen := len(ticker) + 1) > 1 and ticker + "." == child.name[0:tlen]):
                 print("==> rm", child)
-                child.unlink()
+                PolygonApi._remove_cache_file(child)
                 cleared.append(child.name)
         PolygonApi.cached_files = dict()
-        PolygonApi.cflock_release()
         self.fetch_ohlcvdf_cache_stats = dict(hits=0, lookups=0, misses=0)
         return cleared
 
@@ -517,7 +553,17 @@ class PolygonApi(_PolygonApiBase):
                 if cf in PolygonApi.cached_files:
                     # We have already, at least once in this instance, encountered
                     # this cache file; therefore this `read_csv()` should work ok:
-                    # (no need to get lock on cache file).
+                    # (concurrent reads are safe — no lock needed).
+                    #
+                    # NOTE: There is a narrow cross-process race here.  Another process
+                    # could be refreshing the current-year cache file (delete + rewrite)
+                    # while this process reads it without a lock.  In practice this is not
+                    # a concern: (1) the current-year refresh happens at most once per
+                    # trading day, (2) multiprocessing is used for backtesting where
+                    # current-year refresh doesn't apply, and (3) live trading is single-
+                    # process (we add yesterday to the cache and don't cache today).
+                    # If we ever need to close this gap, replace the bare read_csv below
+                    # with _read_cache_file(cf) — the cost is one flock per read.
                     tempdf = pd.concat([tempdf, pd.read_csv(cf, index_col=0, parse_dates=True)])
                     self.fetch_ohlcvdf_cache_stats["hits"] += 1
                     self.logger.debug(f"jj={jj} read-in cache file:{cf}")
@@ -525,13 +571,12 @@ class PolygonApi(_PolygonApiBase):
                     continue
                 try:
                     # We haven't seen the file yet during this run (instance) but the cache
-                    # file _may_ exist from a previous run, so look for it (with a lock):
-                    PolygonApi.cflock_acquire()
+                    # file _may_ exist from a previous run, so look for it:
                     stat_result = pathlib.Path(cf).stat()
                     size = stat_result.st_size
                     if not size > 0:
-                        print("Found zero byte cache file:" + cf)
-                        raise RuntimeError("Found zero byte cache file:" + cf)
+                        print("Found zero byte cache file:" + str(cf))
+                        raise RuntimeError("Found zero byte cache file:" + str(cf))
                     if year == ts_now.year:
                         # The current year's cache file should be replaced
                         # (or appended to) each new trading day.  Should
@@ -540,16 +585,10 @@ class PolygonApi(_PolygonApiBase):
                         start_trade_date = ts_now.replace(
                             hour=9, minute=30, second=0, microsecond=0, nanosecond=0
                         )
-                        # print("TDB: year=", year)
-                        # print("TDB: ts_now=", ts_now)
-                        # print("TDB: start_trade_date=", start_trade_date)
-                        # print("TDB: mtime=", mtime)
                         if ts_now > start_trade_date:
                             current_trade_date = ts_now.date()
                         else:
                             current_trade_date = (ts_now - pd.tseries.offsets.BDay(1)).date()
-                        # print("TDB: mtime.date()=", mtime.date())
-                        # print("TDB: current_trade_date=", current_trade_date)
                         if mtime.date() < current_trade_date:
                             print(
                                 "Current Trade Date=",
@@ -558,10 +597,10 @@ class PolygonApi(_PolygonApiBase):
                                 mtime.date(),
                             )
                             print("Refresh cache file:", cf)
-                            cf.unlink(missing_ok=True)
+                            PolygonApi._remove_cache_file(cf)
                             raise ValueError  # jump to except:
                     self.logger.info(f"jj={jj}: using cache file {cf}, size={size}")
-                    nextdf = pd.read_csv(cf, index_col=0, parse_dates=True)
+                    nextdf = PolygonApi._read_cache_file(cf)
                     self.fetch_ohlcvdf_cache_stats["lookups"] += 1
                     self.logger.debug(_str_df("nextdf(1)", nextdf))
                     if year == years[-1] and len(nextdf) > 0:
@@ -571,24 +610,19 @@ class PolygonApi(_PolygonApiBase):
                         if end_dtm > dtm1:
                             self.logger.warning(f"cache ({cf}) too short ... requesting more data.")
                             raise RuntimeError(f"cache ({cf}) too short ... requesting more data.")
-                    # self.logger.info("BEF: tempdf.iloc[[0,1,-2,-1]]=\n%s",tempdf.iloc[[0,1,-2,-1]])
-                    # self.logger.info("BEF: nextdf.iloc[[0,1,-2,-1]]=\n%s",nextdf.iloc[[0,1,-2,-1]])
                     tlen = len(tempdf)
                     tempdf = pd.concat([tempdf, nextdf])
-                    # self.logger.info("AFT: tempdf.iloc[%s:%s]=\n%s",tlen-2,tlen+3,tempdf.iloc[tlen-2:tlen+3])
                     PolygonApi.cached_files[cf] = True
-                    PolygonApi.cflock_release()
                 except:
                     self.logger.debug(f"cache not found, requesting data for cache file: {cf}")
                     cache_df = request_data_to_cache(year)
                     if isinstance(cache_df, pd.DataFrame):  # zero length ok to cache
                         self.logger.debug(f"caching data to file: {cf}")
-                        cache_df.to_csv(cf)
+                        PolygonApi._write_cache_file(cf, cache_df)
                         tempdf = pd.concat([tempdf, cache_df])
                         PolygonApi.cached_files[cf] = True
                         self.logger.debug(_str_df("tempdf(2)", tempdf))
                     self.fetch_ohlcvdf_cache_stats["misses"] += 1
-                    PolygonApi.cflock_release()
 
             if len(tempdf) > 1:
                 end_dtm = self._input_to_datetime(end, "end")
