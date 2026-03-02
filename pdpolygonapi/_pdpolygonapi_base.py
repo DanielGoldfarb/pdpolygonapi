@@ -22,6 +22,7 @@ class _PolygonApiBase:
         self._initial_timeout = 6  # seconds
         self._retry_timeout = 12  # seconds
         self._retry_timeout_raise = False
+        self._last_response = None  # last JSON dict returned by _req_get_json
 
     def _input_to_datetime(self, input, adj=None):
         if isinstance(input, int):
@@ -61,6 +62,7 @@ class _PolygonApiBase:
                         self.logger.error(
                             f"Timeout at {self._retry_timeout}s (retry failed): {sreq}"
                         )
+                        self._last_response = {}
                         return {}
 
             rjson = r.json()
@@ -77,6 +79,7 @@ class _PolygonApiBase:
                 time.sleep(12)
             else:
                 have_response = True
+        self._last_response = rjson
         return rjson
 
     def _json_response_to_ohlcvdf(self, span, rjson, tz="US/Eastern"):

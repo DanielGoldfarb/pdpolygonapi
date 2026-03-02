@@ -850,8 +850,24 @@ class PolygonApi(_PolygonApiBase):
         # oc = OptionsChain(underlying,totdf)
         return self.OptionsChain(underlying, totdf.Ticker)
 
-    def fetch_quotes(self, ticker, str_date, show_request=False):
-        # Format nanosecond UTC unix timestamps:
+    def _fetch_raw_quotes(self, ticker, str_date, show_request=False):
+        """Fetch raw NBBO tick data from the Polygon v3/quotes endpoint.
+
+        Returns a DataFrame of individual quote ticks with a UTC DatetimeIndex.
+        This is the shared low-level fetcher used by both ``fetch_quotes()``
+        (1S resampling) and ``fetch_quote_ohlcdf()`` (1-min OHLC resampling).
+
+        Args:
+            ticker:       Ticker symbol (equity or option).
+            str_date:     Date string in 'YYYY-MM-DD' format.
+            show_request: If True, print the request URL (API key masked).
+
+        Returns:
+            pd.DataFrame with columns ``[Ask, AskSize, Bid, BidSize]`` and a
+            UTC ``DatetimeIndex`` named ``Timestamp``, sorted by timestamp.
+            Returns an empty DataFrame (same columns) when no data is available.
+        """
+        # Format nanosecond UTC unix timestamps for regular market hours:
         ts1 = str(
             int(pd.Timestamp(str_date + " 09:30", tz="US/Eastern").tz_convert("UTC").timestamp() * (10**9))
         )
@@ -864,131 +880,156 @@ class PolygonApi(_PolygonApiBase):
             "timestamp.gte=" + ts1 + "&timestamp.lte=" + ts2 + "&limit=50000&" + "apiKey=" + self.APIKEY
         )
 
-        print(
-            'Requesting quote data for "' + ticker + '"\n',
-            "from",
-            pd.Timestamp(int(ts1)),
-            " to ",
-            pd.Timestamp(int(ts2)),
-            "UTC",
+        self.logger.info(
+            "fetch_raw_quotes: %s %s  %s to %s UTC",
+            ticker, str_date, pd.Timestamp(int(ts1)), pd.Timestamp(int(ts2)),
         )
 
         if show_request:
             print("req=\n", req[: req.find("&apiKey=")] + "&apiKey=***")
 
-        rd = requests.get(req).json()
-
-        self.logger.debug(f"response status: {rd['status']}")  # ,'  response keys:',rd.keys())
-
-        columns = [
-            "Ask",
-            "AsizeA",
-            "AsizeM",
-            "AsizeH",
-            "AsizeL",
-            "Bid",
-            "BsizeA",
-            "BsizeM",
-            "BsizeH",
-            "BsizeL",
-            "Count",
-        ]
+        # Empty DataFrame template
+        empty_columns = ["Ask", "AskSize", "Bid", "BidSize"]
         ix = pd.DatetimeIndex([], name="Timestamp")
-        empty = pd.DataFrame(columns=columns, index=ix)
+        empty = pd.DataFrame(columns=empty_columns, index=ix)
+
+        rd = self._req_get_json(req)
+
+        if not rd or "status" not in rd:
+            self.logger.warning("fetch_raw_quotes: empty or missing status in response")
+            return empty
+
+        self.logger.debug("fetch_raw_quotes: response status: %s", rd["status"])
 
         if rd["status"] != "OK":
-            print("Got status =", rd["status"])
+            self.logger.warning("fetch_raw_quotes: status=%s", rd["status"])
             return empty
 
-        if "results" not in rd:
-            print("No results in response.")
-            return empty
-
-        if len(rd["results"]) == 0:
-            print("zero length results.")
+        if "results" not in rd or len(rd["results"]) == 0:
+            self.logger.info("fetch_raw_quotes: no results for %s on %s", ticker, str_date)
             return empty
 
         qdf = pd.DataFrame(rd["results"])
         ts = [pd.Timestamp(t, tz="UTC") for t in qdf.sip_timestamp]
         qdf.index = pd.DatetimeIndex(ts)
-        self.logger.debug(f"received {len(qdf)} quotes so far ...")
+        self.logger.debug("fetch_raw_quotes: received %d quotes so far ...", len(qdf))
 
         while rd["status"] == "OK" and "next_url" in rd:
-            self.logger.debug(f"getting next_url ... ")
-            req = rd["next_url"] + "&apikey=" + self.APIKEY
-            rd = requests.get(req).json()
-            self.logger.debug(f"response status: {rd['status']}")
+            self.logger.debug("fetch_raw_quotes: getting next_url ...")
+            nxtr = rd["next_url"] + "&apikey=" + self.APIKEY
+            rd = self._req_get_json(nxtr)
+            if not rd or "results" not in rd:
+                break
+            self.logger.debug("fetch_raw_quotes: response status: %s", rd["status"])
             tdf = pd.DataFrame(rd["results"])
             ts = [pd.Timestamp(t, tz="UTC") for t in tdf.sip_timestamp]
             tdf.index = pd.DatetimeIndex(ts)
             qdf = pd.concat([qdf, tdf])
             if "next_url" in rd:
-                self.logger.debug(f"received {len(qdf)} quotes so far ...")
+                self.logger.debug("fetch_raw_quotes: received %d quotes so far ...", len(qdf))
             else:
-                self.logger.debug(f"received {len(qdf)} quotes.")
+                self.logger.debug("fetch_raw_quotes: received %d quotes total.", len(qdf))
 
-        if rd["status"] != "OK":
-            print("WARNING: status=", rd["status"])
+        if rd.get("status") != "OK":
+            self.logger.warning("fetch_raw_quotes: final status=%s", rd.get("status"))
 
         qdf.sort_index(inplace=True)
-
         qdf.rename(
-            columns=dict(
-                ask_price="Ask",
-                ask_size="AsizeA",
-                bid_price="Bid",
-                bid_size="BsizeA",
-                sequence_number="Count",
-            ),
+            columns=dict(ask_price="Ask", ask_size="AskSize", bid_price="Bid", bid_size="BidSize"),
             inplace=True,
         )
         qdf.index.name = "Timestamp"
 
-        # add columns for size: median, high, low:
-        qdf["AsizeM"] = qdf["AsizeA"]
-        qdf["AsizeH"] = qdf["AsizeA"]
-        qdf["AsizeL"] = qdf["AsizeA"]
-        qdf["BsizeM"] = qdf["BsizeA"]
-        qdf["BsizeH"] = qdf["BsizeA"]
-        qdf["BsizeL"] = qdf["BsizeA"]
+        # Keep only the columns we need; drop polygon internals
+        # (conditions, participant_timestamp, sequence_number, etc.)
+        qdf = qdf[["Ask", "AskSize", "Bid", "BidSize"]].copy()
+
+        self.logger.info("fetch_raw_quotes: returning %d raw ticks for %s on %s", len(qdf), ticker, str_date)
+        return qdf
+
+    def fetch_quotes(self, ticker, str_date, show_request=False):
+        """Fetch NBBO quotes resampled to 1-second intervals.
+
+        Calls ``_fetch_raw_quotes()`` to get raw tick data, then resamples to
+        1-second bars with aggregated bid/ask prices and sizes.
+
+        Args:
+            ticker:       Ticker symbol (equity or option).
+            str_date:     Date string in 'YYYY-MM-DD' format.
+            show_request: If True, print the request URL (API key masked).
+
+        Returns:
+            pd.DataFrame with columns ``[Ask, AsizeA, AsizeM, AsizeH, AsizeL,
+            Bid, BsizeA, BsizeM, BsizeH, BsizeL, Count]`` and a tz-naive
+            ``DatetimeIndex`` (US/Eastern) named ``Timestamp``.
+        """
+        print(f'Requesting quote data for "{ticker}" on {str_date} ...')
+
+        qdf = self._fetch_raw_quotes(ticker, str_date, show_request=show_request)
+
+        # Empty DataFrame with expected 1S resampled columns
+        _1s_columns = [
+            "Ask", "AsizeA", "AsizeM", "AsizeH", "AsizeL",
+            "Bid", "BsizeA", "BsizeM", "BsizeH", "BsizeL", "Count",
+        ]
+
+        if len(qdf) == 0:
+            ix = pd.DatetimeIndex([], name="Timestamp")
+            return pd.DataFrame(columns=_1s_columns, index=ix)
+
+        # Build a DataFrame with duplicated size columns so that the 1S
+        # resampling aggregation can compute mean/median/max/min of sizes
+        # independently.  At the tick level all four variants start as the
+        # same raw tick value.
+        rdf = pd.DataFrame(
+            {
+                "Ask": qdf["Ask"],
+                "AsizeA": qdf["AskSize"],
+                "AsizeM": qdf["AskSize"],
+                "AsizeH": qdf["AskSize"],
+                "AsizeL": qdf["AskSize"],
+                "Bid": qdf["Bid"],
+                "BsizeA": qdf["BidSize"],
+                "BsizeM": qdf["BidSize"],
+                "BsizeH": qdf["BidSize"],
+                "BsizeL": qdf["BidSize"],
+                "Count": 1,
+            },
+            index=qdf.index,
+        )
+        rdf.index.name = "Timestamp"
 
         print("resampling to 1S intervals ...")
         sqdf = (
-            qdf.resample("1S")
+            rdf.resample("1s")
             .agg(
                 {
-                    "Ask": "mean",  # Ask Price
-                    "AsizeA": "mean",  # Ask Size Average
-                    "AsizeM": "median",  # Ask Size Median
-                    "AsizeH": "max",  # Ask Size High
-                    "AsizeL": "min",  # Ask Size Low
-                    "Bid": "mean",  # Bid Price
-                    "BsizeA": "mean",  # Bid Size Average
-                    "BsizeM": "median",  # Bid Size Median
-                    "BsizeH": "max",  # Bid Size High
-                    "BsizeL": "min",  # Bid Size Low
-                    "Count": "count",
-                }  # Count Bids/Asks in this second.
+                    "Ask": "mean",       # Ask Price (mean of ticks in this second)
+                    "AsizeA": "mean",     # Ask Size Average
+                    "AsizeM": "median",   # Ask Size Median
+                    "AsizeH": "max",      # Ask Size High
+                    "AsizeL": "min",      # Ask Size Low
+                    "Bid": "mean",        # Bid Price (mean of ticks in this second)
+                    "BsizeA": "mean",     # Bid Size Average
+                    "BsizeM": "median",   # Bid Size Median
+                    "BsizeH": "max",      # Bid Size High
+                    "BsizeL": "min",      # Bid Size Low
+                    "Count": "sum",       # Number of NBBO updates in this second
+                }
             )
             .dropna(how="any")
         )
 
-        sqdf.AsizeA = [int(round(item, 0)) for item in sqdf.AsizeA]
-        sqdf.BsizeA = [int(round(item, 0)) for item in sqdf.BsizeA]
-        sqdf.AsizeM = [int(round(item, 0)) for item in sqdf.AsizeM]
-        sqdf.BsizeM = [int(round(item, 0)) for item in sqdf.BsizeM]
-        sqdf.AsizeH = [int(round(item, 0)) for item in sqdf.AsizeH]
-        sqdf.BsizeH = [int(round(item, 0)) for item in sqdf.BsizeH]
-        sqdf.AsizeL = [int(round(item, 0)) for item in sqdf.AsizeL]
-        sqdf.BsizeL = [int(round(item, 0)) for item in sqdf.BsizeL]
-        sqdf.Ask = [round(item, 2) for item in sqdf.Ask]
-        sqdf.Bid = [round(item, 2) for item in sqdf.Bid]
-        sqdf.Count = [int(round(item, 0)) for item in sqdf.Count]
+        # Round to appropriate precision
+        sqdf["Ask"] = sqdf["Ask"].round(2)
+        sqdf["Bid"] = sqdf["Bid"].round(2)
+        for col in ("AsizeA", "AsizeM", "AsizeH", "AsizeL",
+                     "BsizeA", "BsizeM", "BsizeH", "BsizeL", "Count"):
+            sqdf[col] = sqdf[col].round(0).astype(int)
 
         sqdf.index = sqdf.index.tz_convert("US/Eastern").tz_localize(None)
 
         print("returning", len(sqdf), "quotes.")
-
         return sqdf
 
 
