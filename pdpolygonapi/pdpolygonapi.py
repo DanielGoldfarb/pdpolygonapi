@@ -963,7 +963,7 @@ class PolygonApi(_PolygonApiBase):
             Bid, BsizeA, BsizeM, BsizeH, BsizeL, Count]`` and a tz-naive
             ``DatetimeIndex`` (US/Eastern) named ``Timestamp``.
         """
-        print(f'Requesting quote data for "{ticker}" on {str_date} ...')
+        self.logger.info('fetch_quotes: requesting data for "%s" on %s', ticker, str_date)
 
         qdf = self._fetch_raw_quotes(ticker, str_date, show_request=show_request)
 
@@ -999,7 +999,7 @@ class PolygonApi(_PolygonApiBase):
         )
         rdf.index.name = "Timestamp"
 
-        print("resampling to 1S intervals ...")
+        self.logger.info("fetch_quotes: resampling to 1S intervals ...")
         sqdf = (
             rdf.resample("1s")
             .agg(
@@ -1029,8 +1029,178 @@ class PolygonApi(_PolygonApiBase):
 
         sqdf.index = sqdf.index.tz_convert("US/Eastern").tz_localize(None)
 
-        print("returning", len(sqdf), "quotes.")
+        self.logger.info("fetch_quotes: returning %d 1S quotes.", len(sqdf))
         return sqdf
+
+    def fetch_quote_ohlcdf(
+        self,
+        ticker,
+        start=-30,
+        end=0,
+        span="minute",
+        span_multiplier=1,
+        cache=None,
+        show_request=False,
+    ):
+        """Fetch NBBO quote data resampled to minutely OHLC bars.
+
+        Iterates over trading days in the ``[start, end]`` range, fetches
+        1-second mean bid/ask data for each day via ``fetch_quotes()``, then
+        resamples into 1-minute OHLC bars.  The OHLC values are derived from
+        the 1-second mean bid and ask prices.
+
+        Parameters
+        ----------
+        ticker : str
+            Ticker symbol (equity or option).
+
+        start : int or str
+            Earliest date to include.  Same semantics as ``fetch_ohlcvdf()``:
+            ``int`` for relative days (0=today), ``str`` for 'YYYY-MM-DD'.
+            Default is -30.
+
+        end : int or str
+            Latest date to include.  Same semantics as ``fetch_ohlcvdf()``.
+            Default is 0 (today).
+
+        span : str
+            Must be ``'minute'``.  Other spans are not currently supported.
+
+        span_multiplier : int
+            Integer from 1 to 30 inclusive.  When > 1 the 1-minute bars are
+            further resampled to N-minute bars.  Default is 1.
+
+        cache : bool or None
+            Not yet implemented.  Raises ``NotImplementedError`` when truthy.
+
+        show_request : bool
+            Passed through to ``fetch_quotes()`` / ``_fetch_raw_quotes()``.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with a tz-naive (US/Eastern) DatetimeIndex and columns:
+            ``BidOpen, BidHigh, BidLow, BidClose, AskOpen, AskHigh, AskLow,
+            AskClose, Mid, Count``.
+
+            ``Mid`` = ``(BidClose + AskClose) / 2``, rounded to 2 decimal places.
+            ``Count`` = total number of raw NBBO ticks in the bar.
+        """
+        # --- Validation --------------------------------------------------------
+        if span != "minute":
+            raise ValueError(
+                f"fetch_quote_ohlcdf only supports span='minute' (got '{span}')"
+            )
+
+        if not isinstance(span_multiplier, int):
+            raise TypeError(
+                f"`span_multiplier` must be an int (but is type {type(span_multiplier)})"
+            )
+        if span_multiplier < 1 or span_multiplier > 30:
+            raise ValueError("span_multiplier must be >= 1 and <= 30")
+
+        if not isinstance(cache, bool):
+            cache = self.cache_initializer
+        if cache:
+            raise NotImplementedError(
+                "Caching for fetch_quote_ohlcdf is not yet implemented"
+            )
+
+        # --- Determine date range -----------------------------------------------
+        start_dtm = self._input_to_datetime(start, 0)
+        end_dtm = self._input_to_datetime(end, "end")
+        bdays = pd.bdate_range(start_dtm.date(), end_dtm.date())
+
+        self.logger.info(
+            "fetch_quote_ohlcdf: ticker=%s, %d business days from %s to %s",
+            ticker,
+            len(bdays),
+            start_dtm.date(),
+            end_dtm.date(),
+        )
+
+        # --- Column definitions -------------------------------------------------
+        _ohlc_columns = [
+            "BidOpen", "BidHigh", "BidLow", "BidClose",
+            "AskOpen", "AskHigh", "AskLow", "AskClose",
+            "Mid", "Count",
+        ]
+
+        # --- Fetch and resample each day ----------------------------------------
+        day_frames = []
+        for day in bdays:
+            str_date = day.strftime("%Y-%m-%d")
+            sqdf = self.fetch_quotes(ticker, str_date, show_request=show_request)
+            if len(sqdf) == 0:
+                self.logger.debug(
+                    "fetch_quote_ohlcdf: no data for %s on %s", ticker, str_date
+                )
+                continue
+
+            # Resample 1S mean bid/ask prices -> 1-minute OHLC bars.
+            # Bid and Ask in the 1S data are already the mean of the raw
+            # tick prices within each second (computed by fetch_quotes).
+            sdf = sqdf[["Bid", "Ask", "Count"]].copy()
+            min_df = (
+                sdf.resample("1min")
+                .agg(
+                    {
+                        "Bid": ["first", "max", "min", "last"],
+                        "Ask": ["first", "max", "min", "last"],
+                        "Count": "sum",
+                    }
+                )
+                .dropna(how="any")
+            )
+
+            # Flatten MultiIndex columns
+            min_df.columns = [
+                "BidOpen", "BidHigh", "BidLow", "BidClose",
+                "AskOpen", "AskHigh", "AskLow", "AskClose",
+                "Count",
+            ]
+
+            # Compute Mid from close-of-bar bid and ask
+            min_df["Mid"] = ((min_df["BidClose"] + min_df["AskClose"]) / 2).round(2)
+            min_df["Count"] = min_df["Count"].astype(int)
+
+            day_frames.append(min_df)
+
+        if not day_frames:
+            ix = pd.DatetimeIndex([], name=ticker)
+            return pd.DataFrame(columns=_ohlc_columns, index=ix)
+
+        result = pd.concat(day_frames)
+        result = result[_ohlc_columns]
+
+        # --- Multi-minute resampling --------------------------------------------
+        if span_multiplier > 1:
+            result = (
+                result.resample(f"{span_multiplier}min")
+                .agg(
+                    {
+                        "BidOpen": "first",
+                        "BidHigh": "max",
+                        "BidLow": "min",
+                        "BidClose": "last",
+                        "AskOpen": "first",
+                        "AskHigh": "max",
+                        "AskLow": "min",
+                        "AskClose": "last",
+                        "Count": "sum",
+                    }
+                )
+                .dropna(how="any")
+            )
+            # Recompute Mid for multi-minute bars
+            result["Mid"] = (
+                (result["BidClose"] + result["AskClose"]) / 2
+            ).round(2)
+            result["Count"] = result["Count"].astype(int)
+            result = result[_ohlc_columns]
+
+        result.index.name = ticker
+        return result
 
 
 ##########################################################################################

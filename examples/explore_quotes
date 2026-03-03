@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+"""
+Open an IPython session with OHLCV and quote-OHLC data loaded.
+
+Fetches 1-minute (times span_multiplier) bars from both fetch_ohlcvdf()
+and fetch_quote_ohlcdf(), then drops into IPython for exploration.
+
+Usage:
+    ./explore_quotes TICKER START END [SPAN_MULTIPLIER]
+
+Examples:
+    ./explore_quotes SPY 2025-03-03 2025-03-03
+    ./explore_quotes AAPL -5 0 5
+    ./explore_quotes SPY 2025-03-03 2025-03-05 2
+"""
+
+import argparse
+import subprocess
+import sys
+
+
+def _parse_date_or_int(value):
+    """Return an int if value looks like one, otherwise return the string."""
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Open IPython with OHLCV (df) and quote-OHLC (dq) data loaded.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Variables available in IPython:
+    api   - PolygonApi instance
+    df    - OHLCV DataFrame from fetch_ohlcvdf()  (span='minute')
+    dq    - Quote-OHLC DataFrame from fetch_quote_ohlcdf()  (span='minute')
+        """,
+    )
+    parser.add_argument("ticker", help="Ticker symbol (e.g. SPY, AAPL)")
+    parser.add_argument(
+        "start",
+        help="Start date: 'YYYY-MM-DD' or relative int (0=today, -5=five days ago)",
+    )
+    parser.add_argument(
+        "end",
+        help="End date: 'YYYY-MM-DD' or relative int",
+    )
+    parser.add_argument(
+        "span_multiplier",
+        nargs="?",
+        default=1,
+        type=int,
+        help="Minute multiplier 1-30 (default: 1)",
+    )
+
+    args = parser.parse_args()
+
+    start = _parse_date_or_int(args.start)
+    end = _parse_date_or_int(args.end)
+
+    # Quote the string values for the startup code
+    start_repr = repr(start)
+    end_repr = repr(end)
+
+    startup_code = f'''
+import pandas as pd
+from pdpolygonapi import PolygonApi
+
+ticker = {repr(args.ticker)}
+start  = {start_repr}
+end    = {end_repr}
+span_multiplier = {args.span_multiplier}
+
+api = PolygonApi()
+
+print()
+print("Fetching OHLCV data (fetch_ohlcvdf) ...")
+df = api.fetch_ohlcvdf(ticker, start=start, end=end,
+                       span="minute", span_multiplier=span_multiplier,
+                       cache=False, show_request=True)
+print(f"  df: {{len(df)}} rows, columns={{list(df.columns)}}")
+print()
+
+print("Fetching quote-OHLC data (fetch_quote_ohlcdf) ...")
+dq = api.fetch_quote_ohlcdf(ticker, start=start, end=end,
+                             span="minute", span_multiplier=span_multiplier,
+                             cache=False, show_request=True)
+print(f"  dq: {{len(dq)}} rows, columns={{list(dq.columns)}}")
+print()
+
+print("=" * 60)
+print(f"ticker = {{ticker!r}}")
+print(f"start  = {{start!r}},  end = {{end!r}},  span_multiplier = {{span_multiplier}}")
+print(f"df : {{len(df):>6}} rows  (OHLCV from fetch_ohlcvdf)")
+print(f"dq : {{len(dq):>6}} rows  (quote-OHLC from fetch_quote_ohlcdf)")
+print("=" * 60)
+print()
+print("Variables: api, df, dq, ticker, start, end, span_multiplier")
+'''
+
+    subprocess.run(["ipython", "-i", "-c", startup_code])
+
+
+if __name__ == "__main__":
+    main()
