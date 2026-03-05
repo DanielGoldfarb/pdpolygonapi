@@ -126,6 +126,7 @@ class PolygonApi(_PolygonApiBase):
         loglevel: int | str = logging.WARNING,
         wait: bool = True,
         cache: bool = False,
+        quote_cache_dir: str | pathlib.Path | None = None,
     ) -> None:
         """
         Class to provide interface methods to access the Polygon.io REST api.
@@ -146,6 +147,10 @@ class PolygonApi(_PolygonApiBase):
 
             cache:    default value for cache, to be used when not specified within the
                       arguments of individual methods.
+
+            quote_cache_dir:
+                      Override the default quote OHLC cache directory
+                      (``~/.pdpolygonapi/quote_cache/``).  Useful for testing.
 
         Returns:
             An instance of the PolygonApi class
@@ -183,6 +188,8 @@ class PolygonApi(_PolygonApiBase):
         self.wait = wait
         self.cache_initializer = cache
         self.fetch_ohlcvdf_cache_stats = dict(hits=0, lookups=0, misses=0)
+        self._quote_cache_dir_path = pathlib.Path(quote_cache_dir) if quote_cache_dir is not None else None
+        self.fetch_quote_ohlcdf_cache_stats = dict(hits=0, lookups=0, misses=0)
 
     def _cache_dir(self):
         cache_dir = pathlib.Path.home() / ".pdpolygonapi/ohlcv_cache"
@@ -220,6 +227,51 @@ class PolygonApi(_PolygonApiBase):
 
     def get_fetch_ohlcvdf_cache_stats(self):
         return copy.deepcopy(self.fetch_ohlcvdf_cache_stats)
+
+    def _quote_cache_dir(self):
+        """Return (and create) the quote OHLC cache directory."""
+        if self._quote_cache_dir_path is not None:
+            d = self._quote_cache_dir_path
+        else:
+            d = pathlib.Path.home() / ".pdpolygonapi" / "quote_cache"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _quote_cache_file(self, ticker, year_month):
+        """Return cache file path for a ticker and year-month string.
+
+        Args:
+            ticker: Ticker symbol.
+            year_month: String like '2025-03'.
+
+        Returns:
+            pathlib.Path to the cache file.
+        """
+        return self._quote_cache_dir() / f"{ticker}.minute.1.{year_month}.csv.gz"
+
+    def clear_quote_cache(self, ticker):
+        """Remove quote cache files for ``ticker`` (or ``'all'``).
+
+        Returns a list of removed file names.
+        """
+        cleared = []
+        p = self._quote_cache_dir()
+        for child in p.iterdir():
+            if child.name.endswith(".lock"):
+                continue
+            if ticker == "all" or (
+                (tlen := len(ticker) + 1) > 1
+                and ticker + "." == child.name[0:tlen]
+            ):
+                self.logger.info("clear_quote_cache: rm %s", child)
+                PolygonApi._remove_cache_file(child)
+                cleared.append(child.name)
+                PolygonApi.cached_files.pop(child, None)
+        self.fetch_quote_ohlcdf_cache_stats = dict(hits=0, lookups=0, misses=0)
+        return cleared
+
+    def get_fetch_quote_ohlcdf_cache_stats(self):
+        return copy.deepcopy(self.fetch_quote_ohlcdf_cache_stats)
 
     def fetch_ohlcvdf(
         self,
@@ -1071,7 +1123,13 @@ class PolygonApi(_PolygonApiBase):
             further resampled to N-minute bars.  Default is 1.
 
         cache : bool or None
-            Not yet implemented.  Raises ``NotImplementedError`` when truthy.
+            When ``True``, 1-minute bars are cached per calendar month under
+            ``~/.pdpolygonapi/quote_cache/`` (or the directory passed via
+            ``quote_cache_dir`` in the constructor).  Cache files are keyed
+            as ``{ticker}.minute.1.{YYYY-MM}.csv.gz``.  When
+            ``span_multiplier > 1`` the cached 1-minute bars are resampled
+            on the fly.  When ``None``, falls back to the constructor's
+            ``cache`` default.
 
         show_request : bool
             Passed through to ``fetch_quotes()`` / ``_fetch_raw_quotes()``.
@@ -1101,22 +1159,17 @@ class PolygonApi(_PolygonApiBase):
 
         if not isinstance(cache, bool):
             cache = self.cache_initializer
-        if cache:
-            raise NotImplementedError(
-                "Caching for fetch_quote_ohlcdf is not yet implemented"
-            )
 
         # --- Determine date range -----------------------------------------------
         start_dtm = self._input_to_datetime(start, 0)
         end_dtm = self._input_to_datetime(end, "end")
-        bdays = pd.bdate_range(start_dtm.date(), end_dtm.date())
 
         self.logger.info(
-            "fetch_quote_ohlcdf: ticker=%s, %d business days from %s to %s",
+            "fetch_quote_ohlcdf: ticker=%s, start=%s, end=%s, cache=%s",
             ticker,
-            len(bdays),
             start_dtm.date(),
             end_dtm.date(),
+            cache,
         )
 
         # --- Column definitions -------------------------------------------------
@@ -1126,55 +1179,147 @@ class PolygonApi(_PolygonApiBase):
             "Mid", "Count",
         ]
 
-        # --- Fetch and resample each day ----------------------------------------
-        day_frames = []
-        for day in bdays:
-            str_date = day.strftime("%Y-%m-%d")
-            sqdf = self.fetch_quotes(ticker, str_date, show_request=show_request)
-            if len(sqdf) == 0:
-                self.logger.debug(
-                    "fetch_quote_ohlcdf: no data for %s on %s", ticker, str_date
-                )
-                continue
+        if cache:
+            # ---- Cached path: load/build per-month 1-min data ------------------
+            first_month = start_dtm.replace(day=1)
+            month_starts = pd.date_range(first_month, end_dtm, freq="MS")
+            year_months = month_starts.strftime("%Y-%m").tolist()
 
-            # Resample 1S mean bid/ask prices -> 1-minute OHLC bars.
-            # Bid and Ask in the 1S data are already the mean of the raw
-            # tick prices within each second (computed by fetch_quotes).
-            sdf = sqdf[["Bid", "Ask", "Count"]].copy()
-            min_df = (
-                sdf.resample("1min")
-                .agg(
-                    {
-                        "Bid": ["first", "max", "min", "last"],
-                        "Ask": ["first", "max", "min", "last"],
-                        "Count": "sum",
-                    }
-                )
-                .dropna(how="any")
+            ts_now = pd.Timestamp.now()
+            current_ym = ts_now.strftime("%Y-%m")
+
+            month_frames = []
+            for ym in year_months:
+                cf = self._quote_cache_file(ticker, ym)
+
+                if cf in PolygonApi.cached_files:
+                    # In-memory hit — file has already been validated this run.
+                    nextdf = pd.read_csv(cf, index_col=0, parse_dates=True)
+                    self.fetch_quote_ohlcdf_cache_stats["hits"] += 1
+                    self.logger.debug("quote cache hit (in-memory): %s", cf.name)
+                    month_frames.append(nextdf)
+                    continue
+
+                try:
+                    stat_result = cf.stat()
+                    if stat_result.st_size <= 0:
+                        raise RuntimeError(f"Zero byte quote cache file: {cf}")
+
+                    # Age out current month's cache if stale.
+                    if ym == current_ym:
+                        mtime = pd.Timestamp.fromtimestamp(stat_result.st_mtime)
+                        start_trade = ts_now.replace(
+                            hour=9, minute=30, second=0,
+                            microsecond=0, nanosecond=0,
+                        )
+                        if ts_now > start_trade:
+                            current_trade_date = ts_now.date()
+                        else:
+                            current_trade_date = (
+                                ts_now - pd.tseries.offsets.BDay(1)
+                            ).date()
+                        if mtime.date() < current_trade_date:
+                            self.logger.info(
+                                "Refreshing current-month quote cache: %s", cf,
+                            )
+                            PolygonApi._remove_cache_file(cf)
+                            raise ValueError  # fall through to fetch
+
+                    nextdf = PolygonApi._read_cache_file(cf)
+                    self.fetch_quote_ohlcdf_cache_stats["lookups"] += 1
+                    PolygonApi.cached_files[cf] = True
+                    self.logger.debug("quote cache lookup (disk): %s", cf.name)
+                    month_frames.append(nextdf)
+                except:
+                    self.logger.debug("quote cache miss, fetching: %s", cf.name)
+                    ym_year, ym_month = int(ym[:4]), int(ym[5:7])
+                    month_start_dt = pd.Timestamp(ym_year, ym_month, 1)
+                    if ym_month == 12:
+                        month_end_dt = pd.Timestamp(ym_year, 12, 31)
+                    else:
+                        month_end_dt = (
+                            pd.Timestamp(ym_year, ym_month + 1, 1)
+                            - pd.Timedelta(days=1)
+                        )
+                    month_df = self.fetch_quote_ohlcdf(
+                        ticker,
+                        start=month_start_dt.strftime("%Y-%m-%d"),
+                        end=month_end_dt.strftime("%Y-%m-%d"),
+                        span="minute",
+                        span_multiplier=1,
+                        cache=False,
+                        show_request=show_request,
+                    )
+                    if isinstance(month_df, pd.DataFrame):
+                        PolygonApi._write_cache_file(cf, month_df)
+                        PolygonApi.cached_files[cf] = True
+                        month_frames.append(month_df)
+                    self.fetch_quote_ohlcdf_cache_stats["misses"] += 1
+
+            if not month_frames:
+                ix = pd.DatetimeIndex([], name=ticker)
+                result = pd.DataFrame(columns=_ohlc_columns, index=ix)
+            else:
+                result = pd.concat(month_frames)
+                result = result.loc[start_dtm:end_dtm]
+                result = result[_ohlc_columns]
+
+        else:
+            # ---- Uncached path: fetch per business day -------------------------
+            bdays = pd.bdate_range(start_dtm.date(), end_dtm.date())
+            self.logger.info(
+                "fetch_quote_ohlcdf: %d business days",
+                len(bdays),
             )
 
-            # Flatten MultiIndex columns
-            min_df.columns = [
-                "BidOpen", "BidHigh", "BidLow", "BidClose",
-                "AskOpen", "AskHigh", "AskLow", "AskClose",
-                "Count",
-            ]
+            day_frames = []
+            for day in bdays:
+                str_date = day.strftime("%Y-%m-%d")
+                sqdf = self.fetch_quotes(ticker, str_date, show_request=show_request)
+                if len(sqdf) == 0:
+                    self.logger.debug(
+                        "fetch_quote_ohlcdf: no data for %s on %s", ticker, str_date
+                    )
+                    continue
 
-            # Compute Mid from close-of-bar bid and ask
-            min_df["Mid"] = ((min_df["BidClose"] + min_df["AskClose"]) / 2).round(2)
-            min_df["Count"] = min_df["Count"].astype(int)
+                # Resample 1S mean bid/ask prices -> 1-minute OHLC bars.
+                # Bid and Ask in the 1S data are already the mean of the raw
+                # tick prices within each second (computed by fetch_quotes).
+                sdf = sqdf[["Bid", "Ask", "Count"]].copy()
+                min_df = (
+                    sdf.resample("1min")
+                    .agg(
+                        {
+                            "Bid": ["first", "max", "min", "last"],
+                            "Ask": ["first", "max", "min", "last"],
+                            "Count": "sum",
+                        }
+                    )
+                    .dropna(how="any")
+                )
 
-            day_frames.append(min_df)
+                # Flatten MultiIndex columns
+                min_df.columns = [
+                    "BidOpen", "BidHigh", "BidLow", "BidClose",
+                    "AskOpen", "AskHigh", "AskLow", "AskClose",
+                    "Count",
+                ]
 
-        if not day_frames:
-            ix = pd.DatetimeIndex([], name=ticker)
-            return pd.DataFrame(columns=_ohlc_columns, index=ix)
+                # Compute Mid from close-of-bar bid and ask
+                min_df["Mid"] = ((min_df["BidClose"] + min_df["AskClose"]) / 2).round(2)
+                min_df["Count"] = min_df["Count"].astype(int)
 
-        result = pd.concat(day_frames)
-        result = result[_ohlc_columns]
+                day_frames.append(min_df)
 
-        # --- Multi-minute resampling --------------------------------------------
-        if span_multiplier > 1:
+            if not day_frames:
+                ix = pd.DatetimeIndex([], name=ticker)
+                result = pd.DataFrame(columns=_ohlc_columns, index=ix)
+            else:
+                result = pd.concat(day_frames)
+                result = result[_ohlc_columns]
+
+        # --- Multi-minute resampling (both paths) --------------------------------
+        if span_multiplier > 1 and len(result) > 0:
             result = (
                 result.resample(f"{span_multiplier}min")
                 .agg(

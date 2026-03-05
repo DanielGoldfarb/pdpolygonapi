@@ -117,10 +117,6 @@ class TestFetchQuoteOhlcdfValidation:
         with pytest.raises(ValueError, match="must be >= 1 and <= 30"):
             mock_api.fetch_quote_ohlcdf("SPY", span_multiplier=-1)
 
-    def test_cache_true_raises(self, mock_api):
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            mock_api.fetch_quote_ohlcdf("SPY", cache=True)
-
 
 # ---------------------------------------------------------------------------
 # Core functionality tests (monkeypatched)
