@@ -10,14 +10,14 @@ import pandas as pd
 logger = logging.getLogger("test_pdpgapi")
 
 
-def test_clear_ohlcv_cache(pdpgapi):
+def test_clear_ohlcv_cache(pdpgapi_with_cache):
     # Clear the cache:
-    pdpgapi.clear_ohlcv_cache("all")
+    pdpgapi_with_cache.clear_ohlcv_cache("all")
 
     # Generate some cache files by actually requesting data:
     tickers = ["ZS", "ZBRA", "TSLA", "EA"]
     for ticker in tickers:
-        df = pdpgapi.fetch_ohlcvdf(
+        df = pdpgapi_with_cache.fetch_ohlcvdf(
             ticker,
             start="2024-01-02",
             end="2024-12-31",
@@ -26,7 +26,7 @@ def test_clear_ohlcv_cache(pdpgapi):
             show_request=False,
             cache=True,
         )
-        df = pdpgapi.fetch_ohlcvdf(
+        df = pdpgapi_with_cache.fetch_ohlcvdf(
             ticker,
             start="2024-01-02",
             end="2024-12-31",
@@ -36,10 +36,10 @@ def test_clear_ohlcv_cache(pdpgapi):
             cache=True,
         )
 
-    cleared = pdpgapi.clear_ohlcv_cache("EA")
+    cleared = pdpgapi_with_cache.clear_ohlcv_cache("EA")
     assert len(cleared) == 2
 
-    cleared = pdpgapi.clear_ohlcv_cache("all")
+    cleared = pdpgapi_with_cache.clear_ohlcv_cache("all")
     assert len(cleared) == 6
 
 
@@ -108,18 +108,18 @@ def call_yes_cache(api, number, ticker, start, end, span, span_multiplier):
 
 
 @pytest.mark.parametrize("ticker, start, end, span, span_multiplier, expected_cache_ratio", ticker_param_data)
-def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplier, expected_cache_ratio):
+def test_ohlcv_cache(pdpgapi_with_cache, regolden, ticker, start, end, span, span_multiplier, expected_cache_ratio):
     num_tries = 0
     while num_tries < 2:
         num_tries += 1
         logger.info("CLEAR ALL CACHE...")
-        pdpgapi.clear_ohlcv_cache("all")
+        pdpgapi_with_cache.clear_ohlcv_cache("all")
 
-        t0, t1, df_noc = call_no_cache(pdpgapi, LOOP, ticker, start, end, span, span_multiplier)
+        t0, t1, df_noc = call_no_cache(pdpgapi_with_cache, LOOP, ticker, start, end, span, span_multiplier)
         elapsed_no = t1 - t0
         logger.debug(f"NO  cache: t0, t1, elapsed = {t0}, {t1}, {t1 - t0}")
 
-        t0, t1, df_yec = call_yes_cache(pdpgapi, LOOP, ticker, start, end, span, span_multiplier)
+        t0, t1, df_yec = call_yes_cache(pdpgapi_with_cache, LOOP, ticker, start, end, span, span_multiplier)
         elapsed_yes = t1 - t0
         logger.debug(f"YES cache: t0, t1, elapsed = {t0}, {t1}, {t1 - t0}")
 
@@ -140,6 +140,6 @@ def test_ohlcv_cache(pdpgapi, regolden, ticker, start, end, span, span_multiplie
     # print("df_diff=\n",df_diff)
 
     pd.testing.assert_frame_equal(df_noc, df_yec)
-    logger.info(f"cache stats: {pdpgapi.get_fetch_ohlcvdf_cache_stats()}")
+    logger.info(f"cache stats: {pdpgapi_with_cache.get_fetch_ohlcvdf_cache_stats()}")
     assert ratio > expected_cache_ratio
 

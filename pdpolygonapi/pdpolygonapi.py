@@ -126,6 +126,7 @@ class PolygonApi(_PolygonApiBase):
         loglevel: int | str = logging.WARNING,
         wait: bool = True,
         cache: bool = False,
+        ohlcv_cache_dir: str | pathlib.Path | None = None,
         quote_cache_dir: str | pathlib.Path | None = None,
     ) -> None:
         """
@@ -147,6 +148,10 @@ class PolygonApi(_PolygonApiBase):
 
             cache:    default value for cache, to be used when not specified within the
                       arguments of individual methods.
+
+            ohlcv_cache_dir:
+                      Override the default OHLCV cache directory
+                      (``~/.pdpolygonapi/ohlcv_cache/``).  Useful for testing.
 
             quote_cache_dir:
                       Override the default quote OHLC cache directory
@@ -188,13 +193,17 @@ class PolygonApi(_PolygonApiBase):
         self.wait = wait
         self.cache_initializer = cache
         self.fetch_ohlcvdf_cache_stats = dict(hits=0, lookups=0, misses=0)
+        self._ohlcv_cache_dir_path = pathlib.Path(ohlcv_cache_dir) if ohlcv_cache_dir is not None else None
         self._quote_cache_dir_path = pathlib.Path(quote_cache_dir) if quote_cache_dir is not None else None
         self.fetch_quote_ohlcdf_cache_stats = dict(hits=0, lookups=0, misses=0)
 
     def _cache_dir(self):
-        cache_dir = pathlib.Path.home() / ".pdpolygonapi/ohlcv_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        return cache_dir
+        if self._ohlcv_cache_dir_path is not None:
+            d = self._ohlcv_cache_dir_path
+        else:
+            d = pathlib.Path.home() / ".pdpolygonapi" / "ohlcv_cache"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def _cache_file(self, ticker, span, span_multiplier, year=""):
         if isinstance(year, int) and year > 1970 and year < 2100:
