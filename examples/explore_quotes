@@ -6,12 +6,13 @@ Fetches 1-minute (times span_multiplier) bars from both fetch_ohlcvdf()
 and fetch_quote_ohlcdf(), then drops into IPython for exploration.
 
 Usage:
-    ./explore_quotes TICKER START END [SPAN_MULTIPLIER]
+    ./explore_quotes TICKER START END [SPAN_MULTIPLIER] [--cache]
 
 Examples:
     ./explore_quotes SPY 2025-03-03 2025-03-03
     ./explore_quotes AAPL -5 0 5
     ./explore_quotes SPY 2025-03-03 2025-03-05 2
+    ./explore_quotes SPY 2025-03-01 2025-03-05 1 --cache
 """
 
 import argparse
@@ -36,6 +37,7 @@ Variables available in IPython:
     api   - PolygonApi instance
     df    - OHLCV DataFrame from fetch_ohlcvdf()  (span='minute')
     dq    - Quote-OHLC DataFrame from fetch_quote_ohlcdf()  (span='minute')
+    cache - bool passed to both fetch calls
         """,
     )
     parser.add_argument("ticker", help="Ticker symbol (e.g. SPY, AAPL)")
@@ -53,6 +55,12 @@ Variables available in IPython:
         default=1,
         type=int,
         help="Minute multiplier 1-30 (default: 1)",
+    )
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        default=False,
+        help="Enable quote cache (default: False)",
     )
 
     args = parser.parse_args()
@@ -72,32 +80,36 @@ ticker = {repr(args.ticker)}
 start  = {start_repr}
 end    = {end_repr}
 span_multiplier = {args.span_multiplier}
+cache = {args.cache}
 
 api = PolygonApi()
 
 print()
-print("Fetching OHLCV data (fetch_ohlcvdf) ...")
+print(f"Fetching OHLCV data (fetch_ohlcvdf) ...  (cache={{cache}})")
 df = api.fetch_ohlcvdf(ticker, start=start, end=end,
                        span="minute", span_multiplier=span_multiplier,
-                       cache=False, show_request=True)
+                       cache=cache, show_request=True)
 print(f"  df: {{len(df)}} rows, columns={{list(df.columns)}}")
 print()
 
-print("Fetching quote-OHLC data (fetch_quote_ohlcdf) ...")
+print(f"Fetching quote-OHLC data (fetch_quote_ohlcdf) ...  (cache={{cache}})")
 dq = api.fetch_quote_ohlcdf(ticker, start=start, end=end,
                              span="minute", span_multiplier=span_multiplier,
-                             cache=False, show_request=True)
+                             cache=cache, show_request=True)
 print(f"  dq: {{len(dq)}} rows, columns={{list(dq.columns)}}")
+if cache:
+    stats = api.get_fetch_quote_ohlcdf_cache_stats()
+    print(f"  quote cache stats: {{stats}}")
 print()
 
 print("=" * 60)
 print(f"ticker = {{ticker!r}}")
-print(f"start  = {{start!r}},  end = {{end!r}},  span_multiplier = {{span_multiplier}}")
+print(f"start  = {{start!r}},  end = {{end!r}},  span_multiplier = {{span_multiplier}},  cache = {{cache}}")
 print(f"df : {{len(df):>6}} rows  (OHLCV from fetch_ohlcvdf)")
 print(f"dq : {{len(dq):>6}} rows  (quote-OHLC from fetch_quote_ohlcdf)")
 print("=" * 60)
 print()
-print("Variables: api, df, dq, ticker, start, end, span_multiplier")
+print("Variables: api, df, dq, ticker, start, end, span_multiplier, cache")
 '''
 
     subprocess.run(["ipython", "-i", "-c", startup_code])
