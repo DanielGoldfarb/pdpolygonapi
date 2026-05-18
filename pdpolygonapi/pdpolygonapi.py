@@ -677,10 +677,20 @@ class PolygonApi(_PolygonApiBase):
                     PolygonApi.cached_files[cf] = True
                 except:
                     self.logger.debug(f"cache not found, requesting data for cache file: {cf}")
-                    cache_df = request_data_to_cache(year)
-                    if isinstance(cache_df, pd.DataFrame):  # zero length ok to cache
+                    try:
+                        cache_df = request_data_to_cache(year)
+                    except PolygonApiError:
+                        # Layer 3: a failed fetch must NOT write a partial-year
+                        # cache file.  Re-raise so callers see the error.
+                        self.error_stats["cache_writes_skipped_due_to_error"] += 1
+                        raise
+                    if isinstance(cache_df, pd.DataFrame):
+                        # A zero-length frame here is a legitimate cache value
+                        # (ticker genuinely had no data that year), distinct
+                        # from a fetch failure (which would have raised above).
                         self.logger.debug(f"caching data to file: {cf}")
                         PolygonApi._write_cache_file(cf, cache_df)
+                        self.error_stats["cache_writes"] += 1
                         tempdf = pd.concat([tempdf, cache_df])
                         PolygonApi.cached_files[cf] = True
                         self.logger.debug(_str_df("tempdf(2)", tempdf))
@@ -1261,17 +1271,24 @@ class PolygonApi(_PolygonApiBase):
                             pd.Timestamp(ym_year, ym_month + 1, 1)
                             - pd.Timedelta(days=1)
                         )
-                    month_df = self.fetch_quote_ohlcdf(
-                        ticker,
-                        start=month_start_dt.strftime("%Y-%m-%d"),
-                        end=month_end_dt.strftime("%Y-%m-%d"),
-                        span="minute",
-                        span_multiplier=1,
-                        cache=False,
-                        show_request=show_request,
-                    )
+                    try:
+                        month_df = self.fetch_quote_ohlcdf(
+                            ticker,
+                            start=month_start_dt.strftime("%Y-%m-%d"),
+                            end=month_end_dt.strftime("%Y-%m-%d"),
+                            span="minute",
+                            span_multiplier=1,
+                            cache=False,
+                            show_request=show_request,
+                        )
+                    except PolygonApiError:
+                        # Layer 3: a failed month fetch must NOT write a
+                        # partial-month cache file.  Re-raise.
+                        self.error_stats["cache_writes_skipped_due_to_error"] += 1
+                        raise
                     if isinstance(month_df, pd.DataFrame):
                         PolygonApi._write_cache_file(cf, month_df)
+                        self.error_stats["cache_writes"] += 1
                         PolygonApi.cached_files[cf] = True
                         month_frames.append(month_df)
                     self.fetch_quote_ohlcdf_cache_stats["misses"] += 1
