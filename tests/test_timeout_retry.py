@@ -4,12 +4,15 @@ Test timeout and retry logic in pdpolygonapi.
 These tests verify the graduated timeout retry behavior:
 - Initial request with _initial_timeout
 - If timeout, retry with _retry_timeout  
-- If retry times out, either raise or return {} based on _retry_timeout_raise
+- Under the Layer-1 contract, if BOTH timeouts fail (http_get_json returns
+  ``{}``), the resulting non-success response flows through one more
+  Layer-1 one-shot retry; if THAT also times out, PolygonApiError is raised
+  rather than silently returning empty data.
 """
 
 import logging
 import pytest
-from pdpolygonapi import PolygonApi
+from pdpolygonapi import PolygonApi, PolygonApiError
 
 
 @pytest.fixture
@@ -39,65 +42,61 @@ class TestTimeoutRetryBehavior:
         
         Request 6 months of minutely data with 0.5s initial timeout.
         Initial should timeout, retry with 1s should (hopefully) succeed.
+        Under Layer 1, if BOTH timeouts fail the Layer-1 one-shot retry runs
+        next; if that also fails we get a PolygonApiError instead of empty.
         """
         with caplog.at_level(logging.WARNING):
-            # Request a lot of data - 6 months of minutely data for SPY
-            df = api_short_timeout.fetch_ohlcvdf(
-                "SPY",
-                start="2025-01-01",
-                end="2025-06-30",
-                span="minute",
-                cache=False,
-            )
-        
-        # Check if we got the warning about initial timeout
+            try:
+                df = api_short_timeout.fetch_ohlcvdf(
+                    "SPY",
+                    start="2025-01-01",
+                    end="2025-06-30",
+                    span="minute",
+                    cache=False,
+                )
+            except PolygonApiError as e:
+                print(f"\n✓ Both http-level timeouts AND Layer-1 retry failed: {e.status!r}")
+                return
+
         timeout_warnings = [r for r in caplog.records if "retrying with" in r.message.lower()]
-        
         if len(timeout_warnings) > 0:
             print(f"\n✓ Initial timeout triggered, retry was attempted")
             print(f"  Warning: {timeout_warnings[0].message}")
-            # If we got here without exception, retry succeeded
             assert df is not None
             print(f"  Retry succeeded, got {len(df)} rows")
         else:
-            # Request completed within initial timeout (network was fast)
             print(f"\n○ Request completed within initial timeout ({api_short_timeout._initial_timeout}s)")
             print(f"  Got {len(df)} rows - try shorter timeout to trigger retry")
             assert df is not None
 
     def test_both_timeouts_fail_returns_empty_when_raise_false(self, api_very_short_timeout, caplog):
         """
-        Test that when both timeouts fail and _retry_timeout_raise=False,
-        we get an empty dict/dataframe (not an exception).
+        Test that when both http-level timeouts fail and _retry_timeout_raise=False,
+        the empty `{}` from http_get_json now flows through the Layer-1 non-OK
+        retry path — and if THAT also fails, raises PolygonApiError.  This is
+        the desired stricter contract (no more silent empty-data returns).
         """
         api_very_short_timeout._retry_timeout_raise = False
         
         with caplog.at_level(logging.DEBUG):
-            # Request a LOT of data - full year of minutely data with impossibly short timeouts
-            df = api_very_short_timeout.fetch_ohlcvdf(
-                "SPY",
-                start="2024-01-01",
-                end="2024-12-31",
-                span="minute",
-                cache=False,
-            )
-        
-        # Check logs
+            try:
+                df = api_very_short_timeout.fetch_ohlcvdf(
+                    "SPY",
+                    start="2024-01-01",
+                    end="2024-12-31",
+                    span="minute",
+                    cache=False,
+                )
+            except PolygonApiError as e:
+                print(f"\n✓ Both timeouts + Layer-1 retry failed; PolygonApiError raised: status={e.status!r}")
+                return
+
         warning_msgs = [r for r in caplog.records if "retrying with" in r.message.lower()]
-        error_msgs = [r for r in caplog.records if "retry failed" in r.message.lower()]
-        
-        if len(error_msgs) > 0:
-            print(f"\n✓ Both timeouts failed as expected")
-            print(f"  Error: {error_msgs[0].message}")
-            # Should return empty DataFrame, not raise
-            assert df is not None
-            assert len(df) == 0
-            print(f"  Returned empty DataFrame (len={len(df)})")
-        elif len(warning_msgs) > 0:
-            print(f"\n○ Initial timeout hit, but retry succeeded")
+        if len(warning_msgs) > 0:
+            print(f"\n○ Initial timeout hit, but retry path eventually succeeded")
             print(f"  Got {len(df)} rows")
         else:
-            print(f"\n○ Both requests succeeded (network too fast for test)")
+            print(f"\n○ All requests succeeded (network too fast for test)")
             print(f"  Got {len(df)} rows")
 
     def test_both_timeouts_fail_raises_when_raise_true(self, api_very_short_timeout):

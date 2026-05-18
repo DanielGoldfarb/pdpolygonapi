@@ -19,6 +19,7 @@ import pandas as pd
 import requests
 
 from pdpolygonapi._pdpolygonapi_base import _PolygonApiBase
+from pdpolygonapi._exceptions import PolygonApiError, PolygonCacheWriteFailed
 
 
 def plain_warning(w, wtype, wpath, wlnum, wdum, **kwargs):
@@ -867,10 +868,16 @@ class PolygonApi(_PolygonApiBase):
             while "next_url" in rd:
                 print(".", end="")
                 req = rd["next_url"] + "&apiKey=" + self.APIKEY
-                r = requests.get(req)
-                rd = r.json()
+                rd = self._req_get_json(req)
                 if "results" not in rd:
-                    break
+                    # Success response with no 'results' is unexpected for this
+                    # endpoint mid-pagination; surface as a hard error rather
+                    # than silently truncating the options chain.
+                    raise PolygonApiError(
+                        status=rd.get("status", ""),
+                        request_url=req[: req.find("&apiKey=")] + "&apiKey=***",
+                        response_json=rd,
+                    )
                 rdf = pd.DataFrame(rd["results"])
                 rdf.drop(
                     [
@@ -956,33 +963,40 @@ class PolygonApi(_PolygonApiBase):
 
         rd = self._req_get_json(req)
 
-        if not rd or "status" not in rd:
-            self.logger.warning("fetch_raw_quotes: empty or missing status in response")
-            return empty
-
-        self.logger.debug("fetch_raw_quotes: response status: %s", rd["status"])
-
-        if rd["status"] != "OK":
-            self.logger.warning("fetch_raw_quotes: status=%s", rd["status"])
-            return empty
-
+        # Under the Layer-1 contract, _req_get_json returns a success response or
+        # raises PolygonApiError.  Empty/missing 'results' here means a legitimate
+        # empty page (e.g. no quotes on this day) — NOT a silent failure.
         if "results" not in rd or len(rd["results"]) == 0:
             self.logger.info("fetch_raw_quotes: no results for %s on %s", ticker, str_date)
             return empty
+
+        self.logger.debug("fetch_raw_quotes: response status: %s", rd.get("status"))
 
         qdf = pd.DataFrame(rd["results"])
         ts = [pd.Timestamp(t, tz="UTC") for t in qdf.sip_timestamp]
         qdf.index = pd.DatetimeIndex(ts)
         self.logger.debug("fetch_raw_quotes: received %d quotes so far ...", len(qdf))
 
-        while rd["status"] == "OK" and "next_url" in rd:
+        # Pagination.  Each next_url page either succeeds (success-response
+        # contract: 'results' key present, possibly empty) or raises via
+        # Layer 1.  We never break silently on failure.
+        while "next_url" in rd:
             self.logger.debug("fetch_raw_quotes: getting next_url ...")
             nxtr = rd["next_url"] + "&apikey=" + self.APIKEY
             rd = self._req_get_json(nxtr)
-            if not rd or "results" not in rd:
-                break
-            self.logger.debug("fetch_raw_quotes: response status: %s", rd["status"])
+            if "results" not in rd:
+                # Layer-1 success responses always contain 'results' for this
+                # endpoint; if we somehow get here it indicates a contract
+                # violation upstream rather than something to swallow.
+                raise PolygonApiError(
+                    status=rd.get("status", ""),
+                    request_url=nxtr.split("&apikey=")[0] + "&apikey=***",
+                    response_json=rd,
+                )
             tdf = pd.DataFrame(rd["results"])
+            if len(tdf) == 0:
+                # Empty page is legitimate but unusual mid-pagination; record and continue.
+                continue
             ts = [pd.Timestamp(t, tz="UTC") for t in tdf.sip_timestamp]
             tdf.index = pd.DatetimeIndex(ts)
             qdf = pd.concat([qdf, tdf])
@@ -990,9 +1004,6 @@ class PolygonApi(_PolygonApiBase):
                 self.logger.debug("fetch_raw_quotes: received %d quotes so far ...", len(qdf))
             else:
                 self.logger.debug("fetch_raw_quotes: received %d quotes total.", len(qdf))
-
-        if rd.get("status") != "OK":
-            self.logger.warning("fetch_raw_quotes: final status=%s", rd.get("status"))
 
         qdf.sort_index(inplace=True)
         qdf.rename(

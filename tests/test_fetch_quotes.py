@@ -245,12 +245,16 @@ class TestFetchQuotesAPI:
     @pytest.fixture
     def api(self):
         import os
+        from pdpolygonapi import PolygonApiError
         key = os.environ.get("POLYGON_API")
         if not key:
             pytest.skip("POLYGON_API not set")
         api = PolygonApi(envkey="POLYGON_API", cache=False)
         # Probe quotes endpoint with a known trading day
-        df = api._fetch_raw_quotes("SPY", "2025-03-03")
+        try:
+            df = api._fetch_raw_quotes("SPY", "2025-03-03")
+        except PolygonApiError as e:
+            pytest.skip(f"Quotes endpoint unavailable (status={e.status})")
         if len(df) == 0:
             status = api._last_response.get("status", "NO_RESPONSE") if api._last_response else "NO_RESPONSE"
             pytest.skip(f"Quotes endpoint unavailable (status={status})")
